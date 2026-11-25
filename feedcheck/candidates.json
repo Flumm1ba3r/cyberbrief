@@ -1,0 +1,221 @@
+{
+  "_comment": "Feed-check input. 'feeds' are URLs given by the owner; 'discover' are pages on the organization's own site whose <link rel=alternate> tags are checked. 'guess' are standard feed paths on the organization's own domain, tried when discovery finds nothing.",
+  "sources": [
+    {
+      "id": "cisa-advisories",
+      "type": "official",
+      "feeds": [
+        "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+      ]
+    },
+    {
+      "id": "cisa-kev",
+      "type": "official",
+      "json": [
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
+      ]
+    },
+    {
+      "id": "ncsc-uk",
+      "type": "official",
+      "feeds": [
+        "https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml"
+      ]
+    },
+    {
+      "id": "acsc",
+      "type": "official",
+      "feeds": [
+        "https://www.cyber.gov.au/rss/alerts",
+        "https://www.cyber.gov.au/rss/advisories"
+      ]
+    },
+    {
+      "id": "csa-sg",
+      "type": "official",
+      "discover": [
+        "https://www.csa.gov.sg/alerts-advisories"
+      ]
+    },
+    {
+      "id": "msft-ti",
+      "type": "research",
+      "feeds": [
+        "https://www.microsoft.com/en-us/security/blog/topic/threat-intelligence/feed/"
+      ]
+    },
+    {
+      "id": "google-ti",
+      "type": "research",
+      "feeds": [
+        "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v"
+      ]
+    },
+    {
+      "id": "talos",
+      "type": "research",
+      "discover": [
+        "https://blog.talosintelligence.com/"
+      ]
+    },
+    {
+      "id": "unit42",
+      "type": "research",
+      "discover": [
+        "https://unit42.paloaltonetworks.com/"
+      ]
+    },
+    {
+      "id": "eset",
+      "type": "research",
+      "discover": [
+        "https://www.welivesecurity.com/en/",
+        "https://www.welivesecurity.com/"
+      ],
+      "guess": [
+        "https://www.welivesecurity.com/en/rss/feed/"
+      ]
+    },
+    {
+      "id": "sentinellabs",
+      "type": "research",
+      "discover": [
+        "https://www.sentinelone.com/labs/"
+      ],
+      "guess": [
+        "https://www.sentinelone.com/labs/feed/"
+      ]
+    },
+    {
+      "id": "citizenlab",
+      "type": "research",
+      "discover": [
+        "https://citizenlab.ca/"
+      ],
+      "guess": [
+        "https://citizenlab.ca/feed/"
+      ]
+    },
+    {
+      "id": "sans-isc",
+      "type": "research",
+      "discover": [
+        "https://isc.sans.edu/"
+      ]
+    },
+    {
+      "id": "project-zero",
+      "type": "research",
+      "discover": [
+        "https://projectzero.google/"
+      ]
+    },
+    {
+      "id": "bleepingcomputer",
+      "type": "news",
+      "discover": [
+        "https://www.bleepingcomputer.com/"
+      ],
+      "guess": [
+        "https://www.bleepingcomputer.com/feed/"
+      ]
+    },
+    {
+      "id": "therecord",
+      "type": "news",
+      "discover": [
+        "https://therecord.media/"
+      ],
+      "guess": [
+        "https://therecord.media/feed/"
+      ]
+    },
+    {
+      "id": "securityweek",
+      "type": "news",
+      "discover": [
+        "https://www.securityweek.com/"
+      ]
+    },
+    {
+      "id": "krebs",
+      "type": "news",
+      "discover": [
+        "https://krebsonsecurity.com/"
+      ]
+    },
+    {
+      "id": "ars-security",
+      "type": "news",
+      "discover": [
+        "https://arstechnica.com/security/"
+      ],
+      "guess": [
+        "https://arstechnica.com/security/feed/",
+        "https://feeds.arstechnica.com/arstechnica/security"
+      ]
+    },
+    {
+      "id": "cyberscoop",
+      "type": "news",
+      "discover": [
+        "https://cyberscoop.com/"
+      ]
+    },
+    {
+      "id": "techcrunch-security",
+      "type": "news",
+      "discover": [
+        "https://techcrunch.com/category/security/"
+      ]
+    },
+    {
+      "id": "darkreading",
+      "type": "news",
+      "discover": [
+        "https://www.darkreading.com/"
+      ],
+      "guess": [
+        "https://www.darkreading.com/rss.xml"
+      ]
+    },
+    {
+      "id": "register-security",
+      "type": "news",
+      "discover": [
+        "https://www.theregister.com/security/"
+      ],
+      "guess": [
+        "https://www.theregister.com/security/headlines.atom"
+      ]
+    },
+    {
+      "id": "wired-security",
+      "type": "news",
+      "discover": [
+        "https://www.wired.com/category/security/"
+      ],
+      "guess": [
+        "https://www.wired.com/feed/category/security/latest/rss"
+      ]
+    },
+    {
+      "id": "schneier",
+      "type": "research",
+      "discover": [
+        "https://www.schneier.com/"
+      ]
+    },
+    {
+      "id": "msrc",
+      "type": "vendor",
+      "discover": [
+        "https://msrc.microsoft.com/blog/"
+      ],
+      "guess": [
+        "https://msrc.microsoft.com/blog/feed"
+      ]
+    }
+  ]
+}

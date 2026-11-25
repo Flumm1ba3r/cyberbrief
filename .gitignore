@@ -1,0 +1,6 @@
+node_modules/
+dist/
+feedcheck-results/
+*.log
+.env
+.DS_Store
