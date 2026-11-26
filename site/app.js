@@ -288,7 +288,17 @@ function renderStatus() {
     ul.append(li);
   }
   det.append(sum, ul);
-  foot.replaceChildren(p, det);
+  const next = document.createElement('p');
+  next.textContent = `Updates every ${d.updateEveryHours || 2} hours. ${nextUpdateText(d)} `;
+  if (d.repo && /^[\w.-]+\/[\w.-]+$/.test(d.repo)) {
+    const a = document.createElement('a');
+    a.href = `https://github.com/${d.repo}/actions/workflows/briefing.yml`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'Update now on GitHub ↗';
+    next.append(a);
+  }
+  foot.replaceChildren(p, next, det);
 }
 
 function banner(text) {
@@ -302,9 +312,24 @@ function banner(text) {
 
 // --- data -------------------------------------------------------------------------
 
-async function load() {
+const timeOf = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+function nextUpdateText(data) {
+  // The workflow runs at minute 17 of every 2nd hour (UTC); a run takes a minute or two to publish.
+  const every = data.updateEveryHours || 2;
+  const d = new Date();
+  d.setUTCMinutes(19, 0, 0);
+  while (d.getUTCHours() % every !== 0 || d <= Date.now()) d.setUTCHours(d.getUTCHours() + 1);
+  const overdue = Date.now() - Date.parse(data.generatedAt) > (every + 0.5) * 3600 * 1000;
+  // GitHub's scheduled runs are sometimes late; say so rather than promise a time that has passed.
+  return overdue ? 'An update is running late; GitHub sometimes delays scheduled runs.' : `Next update around ${timeOf(d)}.`;
+}
+
+let bannerTimer;
+async function load(manual = false) {
   const btn = $('#refresh');
   btn.classList.add('spinning');
+  const before = state.data;
   try {
     const res = await fetch(DATA_URL, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -312,7 +337,21 @@ async function load() {
     state.data = data;
     state.fetchedAt = Date.now();
     const stale = res.headers.get('x-cyberbrief-cache') === 'offline';
-    banner(stale ? `You’re offline. Showing the briefing from ${ago(data.generatedAt)}.` : null);
+    clearTimeout(bannerTimer);
+    if (stale) {
+      banner(`You’re offline. Showing the briefing from ${ago(data.generatedAt)}.`);
+    } else if (manual && before) {
+      if (before.generatedAt === data.generatedAt) {
+        banner(`Already up to date (built ${timeOf(Date.parse(data.generatedAt))}). ${nextUpdateText(data)}`);
+      } else {
+        const oldIds = new Set(before.stories.map((s) => s.id));
+        const added = data.stories.filter((s) => !oldIds.has(s.id)).length;
+        banner(added ? `Updated: ${added} new ${added === 1 ? 'story' : 'stories'}.` : 'Updated. No new stories.');
+      }
+      bannerTimer = setTimeout(() => banner(null), 6000);
+    } else {
+      banner(null);
+    }
     renderStatus();
     render();
   } catch (e) {
@@ -346,7 +385,7 @@ $('#q').addEventListener('input', (e) => {
   qTimer = setTimeout(() => { state.query = e.target.value; state.limit = PAGE; render(); }, 120);
 });
 
-$('#refresh').addEventListener('click', load);
+$('#refresh').addEventListener('click', () => load(true));
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - state.fetchedAt > 10 * 60 * 1000) load();

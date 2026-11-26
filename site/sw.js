@@ -1,6 +1,6 @@
-// Offline support. The app shell is served from cache and refreshed in the background;
-// the briefing is fetched from the network first, falling back to the last copy when offline.
-const SHELL_CACHE = 'cyberbrief-shell-v1';
+// Offline support: everything is fetched from the network first, so updates show up immediately,
+// and the last copy is served from cache when offline.
+const SHELL_CACHE = 'cyberbrief-shell-v2';
 const DATA_CACHE = 'cyberbrief-data';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
@@ -33,11 +33,14 @@ async function briefing(request) {
 
 async function shell(request) {
   const cache = await caches.open(SHELL_CACHE);
-  const cached = await cache.match(request, { ignoreSearch: true });
-  const network = fetch(request)
-    .then((res) => { if (res.ok) cache.put(request, res.clone()); return res; })
-    .catch(() => null);
-  return cached || (await network) || (request.mode === 'navigate' ? cache.match('index.html') : Response.error());
+  try {
+    const res = await fetch(request, { cache: 'no-cache' });
+    if (res.ok) cache.put(request, res.clone());
+    return res;
+  } catch {
+    const cached = await cache.match(request, { ignoreSearch: true });
+    return cached || (request.mode === 'navigate' ? cache.match('index.html') : Response.error());
+  }
 }
 
 self.addEventListener('fetch', (event) => {
