@@ -10,6 +10,7 @@ import {
   isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive,
 } from './lib/rank.mjs';
 import { enrichCves } from './lib/cve.mjs';
+import { alertReason, sendAlerts, watchTerms } from './lib/alerts.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const OUT_DIR = new URL('site/data/', ROOT);
@@ -400,6 +401,24 @@ if (claude && weekTop.length >= 3 && (!recap || ageOf(recap.generatedAt) > RECAP
 }
 if (!claude) recap = null;
 
+// --- 8. push alerts (optional) ---------------------------------------------------------
+
+const alerted = state.alerted || {}; // story id -> when it alerted
+let alertState = state.alertState || null;
+if (process.env.NTFY_TOPIC) {
+  log('Alerts…');
+  const outById = new Map(final.map((o) => [o.id, o]));
+  const ctx = { terms: watchTerms(), archive, cveCache };
+  const candidates = [];
+  for (const st of shown) {
+    const out = outById.get(st.id);
+    const reason = out && alertReason(st, out, ctx);
+    if (reason) candidates.push({ out, reason });
+  }
+  alertState = await sendAlerts({ candidates, alerted, alertState, appUrl: process.env.APP_URL, log });
+}
+for (const [id, at] of Object.entries(alerted)) if (ageOf(at) > ARCHIVE_DAYS * DAY) delete alerted[id];
+
 if (claude) {
   const u = claude.claudeUsage;
   log(`Claude (${claude.summarizerModel}): ${u.input} input + ${u.output} output tokens this run`);
@@ -421,7 +440,7 @@ for (const k of Object.keys(pairCache)) {
   const [a, b] = k.split('|');
   if (!archive[a] || !archive[b]) delete pairCache[k];
 }
-const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap };
+const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState };
 
 await mkdir(OUT_DIR, { recursive: true });
 await writeFile(new URL('briefing.json', OUT_DIR), JSON.stringify(briefing));

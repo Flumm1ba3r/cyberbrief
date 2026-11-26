@@ -22,6 +22,16 @@ The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/bu
 3. **Run it**: Actions → Briefing → Run workflow. After that it runs every hour.
 4. **Open it** at `https://<your-username>.github.io/cyberbrief/`. On iPhone, tap Share → Add to Home Screen; on Android, use the browser menu → Install app.
 
+### Push alerts (optional)
+
+CyberBrief can send critical stories to your phone with the free [ntfy](https://ntfy.sh) app (developer: Philipp Heckel).
+
+1. Install ntfy and subscribe to a topic with a long, hard-to-guess name. Anyone who knows the name can read the alerts.
+2. Add it as a repository **secret** named `NTFY_TOPIC`. The next run sends a "CyberBrief alerts are on" test message.
+3. Optionally add a repository **variable** `ALERT_WATCHLIST`, e.g. `Microsoft, Fortinet, Cisco, Singapore`.
+
+You get an alert for stories rated 5/5 (critical), for watchlist matches that are exploited (KEV, actively exploited CVE) or rated 4+, and for follow-ups to important stories. Each story alerts once; at most 4 alerts per run, with any extra rolled into one summary.
+
 GitHub pauses scheduled workflows in public repositories after 60 days without any commits. If the briefing stops updating, re-enable it under Actions.
 
 ## Local development
