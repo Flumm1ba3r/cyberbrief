@@ -54,6 +54,31 @@ async function send(topic, msg, log) {
   log(`  ✉ ${msg.title}`);
 }
 
+// --- quiet hours -------------------------------------------------------------------------
+
+/** Parse QUIET_HOURS, e.g. "23:00-07:00 Asia/Singapore". Returns minutes after midnight, or null if unset/invalid. */
+export function parseQuiet(raw) {
+  const m = (raw || '').trim().match(/^(\d{1,2})(?::(\d{2}))?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*([A-Za-z_]+\/[A-Za-z_\/+-]+|UTC)?$/);
+  if (!m || +m[1] > 23 || +m[3] > 23) return null;
+  return { start: +m[1] * 60 + +(m[2] || 0), end: +m[3] * 60 + +(m[4] || 0), tz: m[5] || 'UTC' };
+}
+
+/** True while notifications should be held back. Quiet hours may span midnight (23:00-07:00). */
+export function isQuiet(cfg, at = new Date()) {
+  if (!cfg || cfg.start === cfg.end) return false;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(at).map((p) => [p.type, p.value]));
+  const m = +parts.hour * 60 + +parts.minute;
+  return cfg.start < cfg.end ? m >= cfg.start && m < cfg.end : m >= cfg.start || m < cfg.end;
+}
+
+function quietNow(log) {
+  if (!process.env.QUIET_HOURS) return false;
+  const cfg = parseQuiet(process.env.QUIET_HOURS);
+  if (!cfg) { log('  QUIET_HOURS setting not understood: use e.g. "23:00-07:00 Asia/Singapore"'); return false; }
+  try { return isQuiet(cfg); } catch { log(`  QUIET_HOURS time zone not recognised: ${cfg.tz}`); return false; }
+}
+
 /**
  * Send alerts for the given candidates and record them in `alerted` (story id -> ISO time).
  * Never throws: alerts must not break the briefing.
@@ -61,6 +86,8 @@ async function send(topic, msg, log) {
 export async function sendAlerts({ candidates, alerted, alertState, appUrl, log }) {
   const topic = process.env.NTFY_TOPIC?.trim();
   if (!topic) return alertState;
+  // During quiet hours nothing is sent or marked as sent: the first run afterwards picks up what is still fresh.
+  if (quietNow(log)) { log('  Quiet hours: holding alerts'); return alertState; }
   const now = Date.now();
   const hash = topicHash(topic);
   try {
@@ -143,12 +170,15 @@ export async function checkHealth({ health, status, claudeStats, appUrl, log }) 
       health.claude.error = claudeStats.lastError;
     } else if (health.claude) {
       recovered = !!health.claude.alertedAt;
+      if (recovered) health.recoveredPending = true;
       delete health.claude;
     }
   }
 
   const topic = process.env.NTFY_TOPIC?.trim();
-  if (topic) {
+  const quiet = topic && quietNow(log);
+  if (quiet) log('  Quiet hours: holding health alerts');
+  if (topic && !quiet) {
     try {
       const longFailing = Object.values(health.sources).filter((s) => now - Date.parse(s.since) >= DAY && !s.alerted);
       if (longFailing.length) {
@@ -171,7 +201,8 @@ export async function checkHealth({ health, status, claudeStats, appUrl, log }) 
         }, log);
         health.claude.alertedAt = iso;
       }
-      if (recovered) {
+      if (health.recoveredPending && !health.claude) {
+        delete health.recoveredPending;
         await send(topic, { title: 'CyberBrief: Claude summaries are working again', message: 'No action needed.', priority: 2, tags: ['white_check_mark'] }, log);
       }
     } catch (e) {

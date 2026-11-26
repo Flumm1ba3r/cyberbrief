@@ -32,6 +32,8 @@ CyberBrief can send critical stories to your phone with the free [ntfy](https://
 
 4. Optionally add a daily top-5 notification: a **secret** (or variable) `DIGEST` with the local time and time zone, e.g. `08:00 Asia/Singapore`. A secret keeps your time zone out of the public run logs. It usually arrives between about 10 minutes before and 5 minutes after the set time (GitHub sometimes starts scheduled runs late).
 
+5. Optionally add quiet hours: a **secret** `QUIET_HOURS`, e.g. `23:00-07:00 Asia/Singapore`. Nothing is sent during those hours; alerts that are still relevant arrive with the first run afterwards (around 7:50).
+
 You get an alert for stories rated 5/5 (critical), for watchlist matches that are exploited (KEV, actively exploited CVE) or rated 4+, and for follow-ups to important stories. Each story alerts once; at most 4 alerts per run, with any extra rolled into one summary.
 
 CyberBrief also tells you when it needs attention: an alert when a source has been failing for a day, when Claude summaries stop working (e.g. no API credit left) and when they recover. The app warns when the briefing is more than 3 hours old.
