@@ -186,29 +186,48 @@ export async function checkHealth({ health, status, claudeStats, appUrl, log }) 
 
 // --- daily digest -------------------------------------------------------------------------
 
-/** Parse the DIGEST setting, e.g. "08:00 Asia/Singapore" or "7" (hour, UTC). */
+/** Parse the DIGEST setting, e.g. "08:00 Asia/Singapore" or "7" (7:00 UTC). Returns minutes after midnight. */
 function parseDigest(raw) {
-  const m = (raw || '').trim().match(/^(\d{1,2})(?::\d{2})?\s*([A-Za-z_]+\/[A-Za-z_\/+-]+|UTC)?$/);
-  if (!m || +m[1] > 23) return null;
-  return { hour: +m[1], tz: m[2] || 'UTC' };
+  const m = (raw || '').trim().match(/^(\d{1,2})(?::(\d{2}))?\s*([A-Za-z_]+\/[A-Za-z_\/+-]+|UTC)?$/);
+  if (!m || +m[1] > 23 || +(m[2] || 0) > 59) return null;
+  return { minutes: +m[1] * 60 + +(m[2] || 0), tz: m[3] || 'UTC' };
 }
 
-function localParts(tz) {
+function localParts(tz, at = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: +parts.hour };
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(at).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: +parts.hour * 60 + +parts.minute };
 }
 
-/** Once a day at the configured local hour, send the top 5 stories. Returns the updated digest state. */
+// The build runs at about :47 each hour, and GitHub sometimes starts scheduled runs late or skips one.
+// So the digest goes out with the first run from 20 minutes before the set time to 100 minutes after it.
+const DIGEST_EARLY = 20;
+const DIGEST_LATE = 100;
+
+/** The local date of the digest that is due now, or null if none is due. Handles times near midnight. */
+export function digestDue(cfg, at = new Date()) {
+  const local = localParts(cfg.tz, at);
+  let diff = local.minutes - cfg.minutes;
+  let dayShift = 0;
+  if (diff > 720) { diff -= 1440; dayShift = 1; } // e.g. 23:50 for a 00:10 digest: tomorrow's
+  if (diff < -720) { diff += 1440; dayShift = -1; } // e.g. 00:30 for a 23:50 digest: yesterday's
+  if (diff < -DIGEST_EARLY || diff >= DIGEST_LATE) return null;
+  if (!dayShift) return local.date;
+  const d = new Date(`${local.date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dayShift);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Once a day around the configured local time, send the top 5 stories. Returns the updated digest state. */
 export async function sendDigest({ stories, digestState, appUrl, log }) {
   const topic = process.env.NTFY_TOPIC?.trim();
   const cfg = parseDigest(process.env.DIGEST);
   if (!topic || !process.env.DIGEST) return digestState;
   if (!cfg) { log(`  DIGEST setting not understood: use e.g. "08:00 Asia/Singapore"`); return digestState; }
-  let local;
-  try { local = localParts(cfg.tz); } catch { log(`  DIGEST time zone not recognised: ${cfg.tz}`); return digestState; }
-  if (local.hour !== cfg.hour || digestState?.date === local.date) return digestState;
+  let due;
+  try { due = digestDue(cfg); } catch { log(`  DIGEST time zone not recognised: ${cfg.tz}`); return digestState; }
+  if (!due || digestState?.date === due) return digestState;
   const recent = stories.filter((s) => Date.now() - Date.parse(s.published) < 24 * 3600 * 1000);
   const top = (recent.length >= 3 ? recent : stories).slice(0, 5);
   if (!top.length) return digestState;
@@ -220,7 +239,7 @@ export async function sendDigest({ stories, digestState, appUrl, log }) {
       tags: ['newspaper'],
       ...(appUrl ? { click: appUrl } : {}),
     }, log);
-    return { date: local.date };
+    return { date: due };
   } catch (e) {
     log(`  Digest failed: ${e.message}`);
     return digestState;

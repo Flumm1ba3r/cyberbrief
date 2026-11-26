@@ -1,6 +1,6 @@
 // Offline support: everything is fetched from the network first, so updates show up immediately,
 // and the last copy is served from cache when offline.
-const SHELL_CACHE = 'cyberbrief-shell-v6';
+const SHELL_CACHE = 'cyberbrief-shell-v7';
 const DATA_CACHE = 'cyberbrief-data';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 

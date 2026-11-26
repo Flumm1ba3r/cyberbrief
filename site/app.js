@@ -424,10 +424,10 @@ const timeOf = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numer
 
 /** When the next scheduled build should be live, or null if the last one is overdue. */
 function nextUpdate(data) {
-  // The workflow runs at minute 17 of every hour (UTC); publishing takes a minute or two.
+  // The workflow runs at minute 47 of every hour (UTC); publishing takes a minute or two.
   const every = data.updateEveryHours || 1;
   const d = new Date();
-  d.setUTCMinutes(19, 0, 0);
+  d.setUTCMinutes(49, 0, 0);
   while (d.getUTCHours() % every !== 0 || d <= Date.now()) d.setUTCHours(d.getUTCHours() + 1);
   const overdue = Date.now() - Date.parse(data.generatedAt) > (every + 0.5) * 3600 * 1000;
   return overdue ? null : d;

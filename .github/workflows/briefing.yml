@@ -2,7 +2,7 @@ name: Briefing
 
 on:
   schedule:
-    - cron: '17 * * * *' # every hour
+    - cron: '47 * * * *' # every hour, at :47 so the daily digest can arrive just before the hour
   workflow_dispatch:
   push:
     branches: [main]

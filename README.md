@@ -30,7 +30,7 @@ CyberBrief can send critical stories to your phone with the free [ntfy](https://
 2. Add it as a repository **secret** named `NTFY_TOPIC`. The next run sends a "CyberBrief alerts are on" test message.
 3. Optionally add a repository **variable** `ALERT_WATCHLIST`, e.g. `Microsoft, Fortinet, Cisco, Singapore`.
 
-4. Optionally add a daily top-5 notification: a **secret** (or variable) `DIGEST` with the local time and time zone, e.g. `08:00 Asia/Singapore`. A secret keeps your time zone out of the public run logs.
+4. Optionally add a daily top-5 notification: a **secret** (or variable) `DIGEST` with the local time and time zone, e.g. `08:00 Asia/Singapore`. A secret keeps your time zone out of the public run logs. It usually arrives between about 10 minutes before and 5 minutes after the set time (GitHub sometimes starts scheduled runs late).
 
 You get an alert for stories rated 5/5 (critical), for watchlist matches that are exploited (KEV, actively exploited CVE) or rated 4+, and for follow-ups to important stories. Each story alerts once; at most 4 alerts per run, with any extra rolled into one summary.
 
