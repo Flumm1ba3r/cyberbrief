@@ -1,5 +1,5 @@
 {
-  "_comment": "Feeds CyberBrief reads. All were confirmed working from GitHub's servers by the feed check (feedcheck/). 'weight' (0-1) is how much a story from this source counts on its own; stories covered by several sources rank higher regardless.",
+  "_comment": "Feeds CyberBrief reads. All were confirmed working from GitHub's servers by the feed check (feedcheck/). 'weight' (0-1) is how much a story from this source counts on its own; stories covered by several sources rank higher regardless. 'deepDive' sources publish postmortems and incident write-ups, which stay in the app for 30 days.",
   "sources": [
     { "id": "cisa-advisories", "name": "CISA", "type": "official", "weight": 0.75, "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml" },
     { "id": "cisa-kev", "name": "CISA KEV", "type": "official", "weight": 1.0, "kind": "kev", "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "fallbackUrl": "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json" },
@@ -28,6 +28,11 @@
     { "id": "techcrunch-security", "name": "TechCrunch", "type": "news", "weight": 0.7, "url": "https://techcrunch.com/category/security/feed/" },
     { "id": "darkreading", "name": "Dark Reading", "type": "news", "weight": 0.7, "url": "https://www.darkreading.com/rss.xml" },
     { "id": "register-security", "name": "The Register", "type": "news", "weight": 0.7, "url": "https://www.theregister.com/security/headlines.atom" },
-    { "id": "wired-security", "name": "Wired", "type": "news", "weight": 0.7, "url": "https://www.wired.com/feed/category/security/latest/rss" }
+    { "id": "wired-security", "name": "Wired", "type": "news", "weight": 0.7, "url": "https://www.wired.com/feed/category/security/latest/rss" },
+    { "id": "risky-biz-news", "name": "Risky Business News", "type": "news", "weight": 0.75, "url": "https://news.risky.biz/rss/" },
+
+    { "id": "cloudflare-postmortems", "name": "Cloudflare", "type": "research", "deepDive": true, "weight": 0.8, "url": "https://blog.cloudflare.com/tag/post-mortem/rss/" },
+    { "id": "github-availability", "name": "GitHub", "type": "research", "deepDive": true, "weight": 0.65, "url": "https://github.blog/tag/github-availability-report/feed/" },
+    { "id": "dfir-report", "name": "The DFIR Report", "type": "research", "deepDive": true, "weight": 0.8, "url": "https://thedfirreport.com/feed/" }
   ]
 }

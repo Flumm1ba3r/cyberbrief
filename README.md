@@ -4,12 +4,16 @@ A personal cybersecurity news briefing that works on your phone. Every hour it c
 
 ## How it works
 
-- **Sources** (`sources.json`) are official agencies (CISA and its Known Exploited Vulnerabilities list, NCSC UK, Australia's ACSC, Singapore's CSA), research teams (Microsoft, Google, Talos, Unit 42, ESET, SentinelLabs, Citizen Lab, SANS ISC, Project Zero, Schneier), and security news outlets (BleepingComputer, The Record, SecurityWeek, Krebs, Ars Technica, CyberScoop, TechCrunch, Dark Reading, The Register, Wired). Each was checked to work from GitHub's servers (`feedcheck/`).
+- **Sources** (`sources.json`) are official agencies (CISA and its Known Exploited Vulnerabilities list, NCSC UK, Australia's ACSC, Singapore's CSA), research teams (Microsoft, Google, Talos, Unit 42, ESET, SentinelLabs, Citizen Lab, SANS ISC, Project Zero, Schneier), security news outlets (BleepingComputer, The Record, SecurityWeek, Krebs, Ars Technica, CyberScoop, TechCrunch, Dark Reading, The Register, Wired, Risky Business News), and publishers of incident postmortems (Cloudflare, GitHub's availability reports, The DFIR Report). Each was checked to work from GitHub's servers (`feedcheck/`).
 - **Ranking**: a story ranks higher when several sources cover it, when it involves active exploitation, ransomware, breaches, supply-chain attacks or nation-state actors, and when it is recent. Promotions, webinars, podcasts and funding news are dropped or pushed down.
 - **Summaries**: if an Anthropic API key is configured, Claude writes a 2–3 sentence summary and a "why it matters" line for each story, and rates its importance. Without a key, the app shows each outlet's own excerpt instead. A story is only summarized once, unless a new source joins it.
-- **The app** (`site/`) is a static web app hosted on GitHub Pages. You can install it on your phone's home screen, and it works offline with the last briefing. It has Top, Latest and Saved views, category filters and search. Saved stories and read state are stored on your device only.
+- **Follow-ups**: new stories are compared with a 120-day archive. When a later article continues an earlier story (same CVE, or same incident confirmed by Claude), it is shown as an **Update** with a timeline of the earlier coverage. Without Claude, only clear matches (a shared CVE or near-identical headline) are linked.
+- **Deep dives**: postmortems, root-cause reports and incident investigations are marked and stay available for 30 days.
+- **CVE details**: each CVE shows its CVSS severity (from the official CVE record) and its EPSS score, the probability of exploitation in the next 30 days (from FIRST).
+- **Week**: the 10 most important stories of the past 7 days, with a short recap written by Claude.
+- **The app** (`site/`) is a static web app hosted on GitHub Pages. You can install it on your phone's home screen, and it works offline with the last briefing. It has Top, Latest, Week and Saved views, filters (watchlist, CVE, deep dives, categories) and search. Settings hold your watchlist (vendors or products you care about, highlighted and ranked higher), "hide stories I've read" and "mark all as read". Watchlist, saved stories and read state are stored on your device only.
 
-The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/build-briefing.mjs` writes `site/data/briefing.json`, and the `site/` folder is deployed to Pages.
+The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/build-briefing.mjs` writes `site/data/briefing.json` (what the app shows) and `site/data/state.json` (the archive and caches the next run builds on), and the `site/` folder is deployed to Pages.
 
 ## Setup
 

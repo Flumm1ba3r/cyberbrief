@@ -16,8 +16,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=3">
-  <script type="module" src="app.js?v=4"></script>
+  <link rel="stylesheet" href="styles.css?v=5">
+  <script type="module" src="app.js?v=5"></script>
 </head>
 <body>
   <header class="top">
@@ -29,13 +29,19 @@
           <p id="updated" class="muted">Loading…</p>
         </div>
       </div>
+      <div class="bar-actions">
+      <button id="settings" class="icon-btn" type="button" aria-label="Settings" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.8a7 7 0 0 1 0 1.9l2 1.8-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.8a7 7 0 0 1 0-1.9l-2-1.8 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9L10.3 2ZM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg>
+      </button>
       <button id="refresh" class="icon-btn" type="button" aria-label="Refresh">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 0 1 7.75 6h-2.1A6 6 0 1 0 18 14h2.03A8 8 0 1 1 12 4Zm5 1h3v5h-5V8h1.6A6 6 0 0 0 12 6V4a8 8 0 0 1 5 1.76V5Z"/></svg>
       </button>
+      </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="View">
       <button role="tab" data-view="top" aria-selected="true">Top</button>
       <button role="tab" data-view="latest" aria-selected="false">Latest</button>
+      <button role="tab" data-view="week" aria-selected="false">Week</button>
       <button role="tab" data-view="saved" aria-selected="false">Saved</button>
     </nav>
     <div class="filters">
@@ -53,21 +59,45 @@
 
   <footer id="foot" class="foot"></footer>
 
+  <dialog id="settings-dlg" aria-labelledby="settings-title">
+    <form method="dialog">
+      <h2 id="settings-title">Settings</h2>
+      <label class="field">
+        <span>Watchlist</span>
+        <textarea id="watch" rows="3" placeholder="e.g. Microsoft, Fortinet, Cisco, Chrome, Okta" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        <small class="muted">Vendors, products or topics you care about, separated by commas. Matching stories are highlighted and ranked higher. Saved on this device only.</small>
+      </label>
+      <label class="check">
+        <input id="hide-read" type="checkbox">
+        <span>Hide stories I’ve read</span>
+      </label>
+      <div class="dlg-actions">
+        <button id="mark-all" type="button" class="secondary">Mark all as read</button>
+        <button value="close" class="primary">Done</button>
+      </div>
+    </form>
+  </dialog>
+
   <template id="card-tpl">
     <article class="card">
       <div class="meta">
         <span class="cat"></span>
         <span class="kev" hidden>CISA KEV</span>
         <span class="new" hidden>New</span>
+        <span class="upd" hidden>Update</span>
+        <span class="deep" hidden>Deep dive</span>
+        <span class="watch" hidden></span>
         <span class="when muted"></span>
       </div>
       <h2 class="title"></h2>
+      <p class="upd-note" hidden></p>
       <p class="summary"></p>
       <p class="why" hidden><strong>Why it matters</strong> <span></span></p>
       <div class="cves"></div>
       <div class="actions">
         <a class="read" target="_blank" rel="noopener noreferrer"></a>
         <button class="more" type="button" hidden></button>
+        <button class="tl-btn" type="button" hidden></button>
         <span class="spacer"></span>
         <button class="share icon-btn" type="button" aria-label="Share" hidden>
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2l4 4-1.4 1.4L13 5.8V15h-2V5.8L9.4 7.4 8 6l4-4Zm-7 9h3v2H6v7h12v-7h-2v-2h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z"/></svg>
@@ -77,6 +107,7 @@
         </button>
       </div>
       <ul class="others" hidden></ul>
+      <ol class="timeline" hidden></ol>
     </article>
   </template>
 </body>

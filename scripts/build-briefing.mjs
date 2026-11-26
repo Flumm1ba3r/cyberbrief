@@ -1,23 +1,35 @@
-// Builds site/data/briefing.json: fetch every source, group coverage of the same event, rank, summarize.
-// Run by .github/workflows/briefing.yml on a schedule. Locally: `npm run build` (needs network access to the feeds),
+// Builds the briefing the app reads (site/data/briefing.json) and the state the next run builds on (site/data/state.json).
+// Run by .github/workflows/briefing.yml every hour. Locally: `npm run build` (needs network access to the feeds),
 // or offline with CYBERBRIEF_FIXTURES=<dir of <source-id>.xml files>.
+//
+// Steps: fetch every source → group coverage of the same event into stories → summarize and rate (Claude, optional)
+// → link follow-ups to earlier stories → add CVE details → rank → pick the week's top stories.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { loadSource, truncate } from './lib/feeds.mjs';
-import { isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey } from './lib/rank.mjs';
+import {
+  isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive,
+} from './lib/rank.mjs';
+import { enrichCves } from './lib/cve.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const OUT_DIR = new URL('site/data/', ROOT);
-const OUT_FILE = new URL('briefing.json', OUT_DIR);
 
 const HOUR = 3600 * 1000;
-const WINDOW_DAYS = 7; // stories older than this are dropped
-const SUMMARIZE_HOURS = 72; // only recent stories are sent to Claude
-const SUMMARIZE_MAX = 45; // ...and at most this many per run
+const DAY = 24 * HOUR;
+const WINDOW_DAYS = 7; // news older than this leaves the feed
+const DEEP_DIVE_DAYS = 30; // postmortems and incident write-ups stay longer
+const ARCHIVE_DAYS = 120; // how far back follow-ups are matched
+const SUMMARIZE_HOURS = 72; // only recent stories are sent to Claude…
+const SUMMARIZE_MAX = 45; // …and at most this many per run
+const FOLLOWUP_CHECKS_MAX = 40; // possible follow-ups Claude checks per run
+const RECAP_EVERY_HOURS = 6;
 const MAX_STORIES = 250;
 const KEV_CATALOG = 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog';
 
 const log = (...a) => console.log(...a);
 const now = Date.now();
+const nowIso = new Date(now).toISOString();
+const ageOf = (iso) => now - Date.parse(iso);
 
 async function pool(items, n, fn) {
   const out = new Array(items.length);
@@ -28,17 +40,18 @@ async function pool(items, n, fn) {
   return out;
 }
 
-async function loadPrevious() {
-  const url = process.env.PREVIOUS_URL;
+/** The previous run's output, from the live site (env var) or the local file. */
+async function loadPrevious(envVar, file) {
+  const url = process.env[envVar];
   try {
     if (url) {
       const res = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     }
-    return JSON.parse(await readFile(OUT_FILE, 'utf8'));
+    return JSON.parse(await readFile(new URL(file, OUT_DIR), 'utf8'));
   } catch (e) {
-    log(`No previous briefing (${url || 'local file'}): ${e.message}`);
+    log(`No previous ${file} (${url || 'local file'}): ${e.message}`);
     return null;
   }
 }
@@ -46,16 +59,21 @@ async function loadPrevious() {
 // --- 1. fetch ---------------------------------------------------------------
 
 const { sources } = JSON.parse(await readFile(new URL('sources.json', ROOT), 'utf8'));
-const previous = await loadPrevious();
+const previous = await loadPrevious('PREVIOUS_URL', 'briefing.json');
+const state = (await loadPrevious('STATE_URL', 'state.json')) || {};
+const archive = state.archive || {}; // story id -> compact record, for follow-ups
+const cveCache = state.cves || {};
+const pairCache = state.pairs || {}; // "laterId|earlierId" -> { f: is follow-up, n: note }
+
 const prevFirstSeen = new Map();
-const cache = new Map(); // contentKey -> Claude's result from an earlier run
+const summaryCache = new Map(); // contentKey -> Claude's result from an earlier run
 for (const s of previous?.stories || []) {
   for (const src of s.sources) prevFirstSeen.set(src.url, src.firstSeen || src.published);
   if (s.summarizedBy === 'claude') {
-    cache.set(s.key, { summary: s.summary, whyItMatters: s.whyItMatters, importance: s.importance, category: s.category });
+    summaryCache.set(s.key, { summary: s.summary, whyItMatters: s.whyItMatters, importance: s.importance, category: s.category, deepDive: s.deepDive });
   }
 }
-const mergedGroups = (previous?.mergedUrls || []).map((g) => new Set(g));
+const mergedGroups = (state.mergedUrls || previous?.mergedUrls || []).map((g) => new Set(g));
 
 log(`Fetching ${sources.length} sources…`);
 const status = [];
@@ -75,7 +93,7 @@ log(`  ${status.filter((s) => s.ok).length}/${sources.length} sources OK`);
 
 // --- 2. normalise items -------------------------------------------------------
 
-const cutoff = now - WINDOW_DAYS * 24 * HOUR;
+const normUrl = (u) => u.replace(/[?#].*$/, '').replace(/\/$/, '');
 const seenUrls = new Set();
 const items = [];
 let kevEntries = [];
@@ -83,25 +101,26 @@ let kevEntries = [];
 for (const { src, items: raw } of results) {
   if (src.kind === 'kev') { kevEntries = raw; continue; }
   for (const it of raw) {
-    const key = it.url.replace(/[?#].*$/, '').replace(/\/$/, '');
+    const key = normUrl(it.url);
     if (seenUrls.has(key)) continue;
     seenUrls.add(key);
-    const firstSeen = prevFirstSeen.get(it.url) || new Date(now).toISOString();
+    const firstSeen = prevFirstSeen.get(it.url) || nowIso;
     // Undated items, or dates in the future, fall back to when CyberBrief first saw them.
-    let published = it.published && Date.parse(it.published) <= now + HOUR ? it.published : firstSeen;
-    if (Date.parse(published) < cutoff || isNoise(it)) continue;
-    items.push({ ...it, published, firstSeen, sourceId: src.id, sourceName: src.name, sourceType: src.type, weight: src.weight });
+    const published = it.published && Date.parse(it.published) <= now + HOUR ? it.published : firstSeen;
+    const deepDive = !!src.deepDive || looksLikeDeepDive(it.title);
+    if (ageOf(published) > (deepDive ? DEEP_DIVE_DAYS : WINDOW_DAYS) * DAY || isNoise(it)) continue;
+    items.push({ ...it, published, firstSeen, deepDive, deepDiveSource: !!src.deepDive, sourceId: src.id, sourceName: src.name, sourceType: src.type, weight: src.weight });
   }
 }
 
 // CISA KEV: one story per day entries were added. CISA's own "adds N vulnerabilities to catalog" alert joins it.
 const kevByDay = new Map();
 for (const k of kevEntries) {
-  if (!k.dateAdded || Date.parse(k.dateAdded) < cutoff) continue;
+  if (!k.dateAdded || ageOf(k.dateAdded) > WINDOW_DAYS * DAY) continue;
   if (!kevByDay.has(k.dateAdded)) kevByDay.set(k.dateAdded, []);
   kevByDay.get(k.dateAdded).push(k);
 }
-const newKevCves = new Set(kevEntries.filter((k) => Date.parse(k.dateAdded) >= cutoff).map((k) => k.cve));
+const newKevCves = new Set([...kevByDay.values()].flat().map((k) => k.cve));
 const kevSource = sources.find((s) => s.kind === 'kev');
 const kevStories = [];
 for (const [day, entries] of kevByDay) {
@@ -111,7 +130,7 @@ for (const [day, entries] of kevByDay) {
   const title = `CISA adds ${entries.length} exploited ${entries.length === 1 ? 'vulnerability' : 'vulnerabilities'} to KEV: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`;
   const lead = {
     title, url: alert?.url || KEV_CATALOG, published: alert?.published || `${day}T12:00:00.000Z`,
-    firstSeen: prevFirstSeen.get(alert?.url || KEV_CATALOG) || new Date(now).toISOString(),
+    firstSeen: prevFirstSeen.get(alert?.url || KEV_CATALOG) || nowIso,
     excerpt: entries.map((e) => `${e.cve} (${e.vendor} ${e.product}): ${e.name}.`).join(' '),
     sourceId: 'cisa-kev', sourceName: alert ? 'CISA' : kevSource?.name || 'CISA KEV', sourceType: 'official', weight: kevSource?.weight ?? 1,
     kevGroup: day,
@@ -123,12 +142,11 @@ for (const [day, entries] of kevByDay) {
 
 // Merges Claude found in earlier runs are applied first, so the same pair isn't re-sent every run.
 const forced = new Map();
-items.forEach((it, i) => { const g = mergedGroups.findIndex((s) => s.has(it.url)); if (g >= 0) forced.set(i, g); });
-const groups = cluster(items);
+items.forEach((it) => { const g = mergedGroups.findIndex((s) => s.has(it.url)); if (g >= 0) forced.set(it, g); });
 const byForced = new Map();
 const stories = [];
-for (const g of groups) {
-  const fg = g.map((it) => forced.get(items.indexOf(it))).find((x) => x !== undefined);
+for (const g of cluster(items)) {
+  const fg = g.map((it) => forced.get(it)).find((x) => x !== undefined);
   if (fg !== undefined && byForced.has(fg)) { byForced.get(fg).items.push(...g); continue; }
   const st = { items: g };
   if (fg !== undefined) byForced.set(fg, st);
@@ -146,7 +164,8 @@ function finish(st) {
   st.updated = st.items.reduce((m, i) => (i.published > m ? i.published : m), st.published);
   st.cves = st.kev ? st.kev.map((k) => k.cve) : cvesIn(st.items.map((i) => `${i.title} ${i.excerpt}`).join(' ')).slice(0, 12);
   st.inKev = !st.kev && st.cves.some((c) => newKevCves.has(c));
-  st.base = baseScore(st) + (st.inKev ? 8 : 0);
+  st.deepDiveSource = st.items.some((i) => i.deepDiveSource);
+  st.deepDiveGuess = st.items.some((i) => i.deepDive);
   return st;
 }
 stories.forEach(finish);
@@ -154,21 +173,19 @@ log(`${items.length} items → ${stories.length} stories`);
 
 // --- 4. summarize with Claude (optional) -----------------------------------------
 
-const mergedUrls = mergedGroups.map((g) => [...g]).filter((g) => g.some((u) => seenUrls.has(u.replace(/[?#].*$/, '').replace(/\/$/, ''))));
-let summarizerModel = null;
+const claude = process.env.ANTHROPIC_API_KEY ? await import('./lib/summarize.mjs') : null;
+const mergedUrls = mergedGroups.map((g) => [...g]).filter((g) => g.some((u) => seenUrls.has(normUrl(u))));
 for (const st of stories) {
-  const hit = cache.get(st.key);
+  const hit = summaryCache.get(st.key);
   if (hit) Object.assign(st, hit, { summarizedBy: 'claude' });
 }
-if (process.env.ANTHROPIC_API_KEY) {
-  const { summarize, summarizerModel: model } = await import('./lib/summarize.mjs');
-  summarizerModel = model;
+if (claude) {
   const pending = stories
-    .filter((s) => !s.summarizedBy && now - Date.parse(s.published) < SUMMARIZE_HOURS * HOUR)
-    .sort((a, b) => finalScore(b, now) - finalScore(a, now))
+    .filter((s) => !s.summarizedBy && ageOf(s.published) < (s.deepDiveGuess ? DEEP_DIVE_DAYS * 24 : SUMMARIZE_HOURS) * HOUR)
+    .sort((a, b) => b.items[0].weight - a.items[0].weight || Date.parse(b.published) - Date.parse(a.published))
     .slice(0, SUMMARIZE_MAX);
   log(`Summarizing ${pending.length} new stories (${stories.filter((s) => s.summarizedBy).length} reused)…`);
-  const res = await summarize(pending, log);
+  const res = await claude.summarize(pending, log);
   const byId = new Map(stories.map((s) => [s.id, s]));
   for (const [id, r] of res) Object.assign(byId.get(id), r, { summarizedBy: 'claude' });
   // Fold stories Claude identified as the same event into one.
@@ -185,8 +202,6 @@ if (process.env.ANTHROPIC_API_KEY) {
   log('ANTHROPIC_API_KEY not set: using feed excerpts as summaries.');
 }
 
-// --- 5. output ------------------------------------------------------------------
-
 function fallbackSummary(st) {
   if (st.kev) {
     const ransomware = st.kev.filter((k) => k.ransomware).length;
@@ -197,45 +212,219 @@ function fallbackSummary(st) {
   return truncate(lead.excerpt || '', 360);
 }
 
-const final = stories
-  .filter((s) => !s.merged)
-  .map((st) => {
-    // A merged story's cached Claude summary must cover the final set of items, so refresh its key.
-    st.key = contentKey(st);
-    const out = {
-      id: st.id,
-      key: st.key,
-      title: st.title,
-      summary: st.summary || fallbackSummary(st),
-      whyItMatters: st.whyItMatters || (st.kev ? `US federal agencies must patch by ${st.kev[0].dueDate}; treat these as priority fixes everywhere.` : ''),
-      category: st.category || guessCategory(st),
-      importance: st.importance || null,
-      summarizedBy: st.summarizedBy || 'feed',
-      score: finalScore(st, now),
-      published: st.published,
-      updated: st.updated,
-      cves: st.cves,
-      inKev: st.inKev || undefined,
-      sources: st.items.map((i) => ({ name: i.sourceName, type: i.sourceType, title: i.title, url: i.url, published: i.published, firstSeen: i.firstSeen })),
-    };
-    if (st.kev) out.kev = st.kev.map((k) => ({ cve: k.cve, vendor: k.vendor, product: k.product, name: k.name, dueDate: k.dueDate, ransomware: k.ransomware }));
-    return out;
-  })
-  .sort((a, b) => b.score - a.score)
-  .slice(0, MAX_STORIES);
+const live = stories.filter((s) => !s.merged);
+for (const st of live) {
+  st.summary ||= fallbackSummary(st);
+  st.whyItMatters ||= st.kev ? `US federal agencies must patch by ${st.kev[0].dueDate}; treat these as priority fixes everywhere.` : '';
+  st.category ||= guessCategory(st);
+  // A dedicated postmortem source always counts; otherwise Claude's judgement, or the headline when Claude isn't used.
+  st.deepDive = st.deepDiveSource || (st.summarizedBy === 'claude' ? !!st.deepDive : st.deepDiveGuess);
+  if (!st.deepDive && ageOf(st.published) > WINDOW_DAYS * DAY) st.dropped = true; // only kept for being a possible deep dive
+}
+
+// --- 5. follow-ups: link new stories to earlier ones about the same incident --------
+
+const current = live.filter((s) => !s.dropped).sort((a, b) => Date.parse(a.published) - Date.parse(b.published));
+const recordOf = (st) => ({
+  id: st.id,
+  threadId: st.threadId,
+  note: st.followUpNote || undefined,
+  title: st.title,
+  summary: truncate(st.summary, 300),
+  category: st.category,
+  importance: st.importance || undefined,
+  published: st.published,
+  updated: st.updated,
+  cves: st.cves.length ? st.cves : undefined,
+  deepDive: st.deepDive || undefined,
+  source: st.items[0].sourceName,
+  url: st.items[0].url,
+});
+const threadOf = (rec) => rec.threadId || rec.id;
+const cveSet = (cves) => new Set(cves && cves.length <= 3 ? cves : []);
+
+const toCheck = []; // { st, candidates: [{ rec, strong, sim }] }
+for (const st of current) {
+  const known = archive[st.id];
+  if (st.kev) { st.threadId = st.id; continue; } // KEV batches span many unrelated products
+  if (known?.checked) { st.threadId = known.threadId || st.id; st.followUpNote = known.note; continue; }
+  st.threadId = st.id;
+  const mine = cveSet(st.cves);
+  const myTokens = tokens(st.title);
+  const others = [...Object.values(archive), ...current.filter((c) => c !== st && c.threadId).map(recordOf)];
+  const candidates = [];
+  const seen = new Set();
+  for (const rec of others) {
+    if (rec.id === st.id || seen.has(rec.id) || rec.id.startsWith('kev-')) continue;
+    seen.add(rec.id);
+    // A follow-up comes at least most of a day after the original; same-day coverage is grouped already.
+    if (Date.parse(rec.published) > Date.parse(st.published) - 20 * HOUR) continue;
+    if (ageOf(rec.published) > ARCHIVE_DAYS * DAY) continue;
+    const sharedCve = [...cveSet(rec.cves)].some((c) => mine.has(c));
+    const { inter, j } = jaccard(myTokens, tokens(rec.title));
+    if (sharedCve || j >= 0.25 && inter >= 2) candidates.push({ rec, strong: sharedCve || j >= 0.5, sim: j + (sharedCve ? 1 : 0) });
+  }
+  candidates.sort((a, b) => b.sim - a.sim);
+  if (candidates.length) toCheck.push({ st, candidates: candidates.slice(0, 3) });
+  else st.checked = true;
+}
+
+let followUps = 0;
+if (toCheck.length) {
+  const decisions = new Map(); // pairKey -> { f, n }
+  for (const [k, v] of Object.entries(pairCache)) decisions.set(k, v);
+  if (claude) {
+    const ask = [];
+    for (const { st, candidates } of toCheck) {
+      for (const c of candidates) {
+        const pair = `${st.id}|${c.rec.id}`;
+        if (!decisions.has(pair) && ask.length < FOLLOWUP_CHECKS_MAX) {
+          ask.push({
+            pair,
+            earlier: { title: c.rec.title, summary: c.rec.summary || '', date: c.rec.published.slice(0, 10) },
+            later: { title: st.title, summary: st.summary, date: st.published.slice(0, 10) },
+          });
+        }
+      }
+    }
+    if (ask.length) {
+      log(`Checking ${ask.length} possible follow-ups…`);
+      const res = await claude.confirmFollowUps(ask, log);
+      for (const [pair, r] of res) decisions.set(pair, { f: r.followUp, n: r.note });
+    }
+  }
+  for (const { st, candidates } of toCheck) {
+    let decided = true;
+    let match = null;
+    for (const c of candidates) {
+      const d = decisions.get(`${st.id}|${c.rec.id}`);
+      if (d) { pairCache[`${st.id}|${c.rec.id}`] = d; if (d.f && !match) match = { c, note: d.n }; continue; }
+      if (!claude) { if (c.strong && !match) match = { c, note: '' }; continue; }
+      decided = false; // not checked yet (over this run's limit): try again next run
+    }
+    if (match) {
+      st.threadId = threadOf(match.c.rec);
+      st.followUpNote = match.note || undefined;
+      followUps++;
+    }
+    st.checked = decided || !!match;
+  }
+}
+log(`Follow-ups: ${followUps} new links (${toCheck.length} stories had candidates)`);
+
+// Update the archive with this run's stories, then drop what is too old.
+for (const st of current) archive[st.id] = { ...recordOf(st), checked: st.checked ?? archive[st.id]?.checked ?? true };
+for (const [id, rec] of Object.entries(archive)) if (ageOf(rec.updated || rec.published) > ARCHIVE_DAYS * DAY) delete archive[id];
+const archiveIds = Object.keys(archive).sort((a, b) => Date.parse(archive[b].published) - Date.parse(archive[a].published));
+for (const id of archiveIds.slice(3000)) delete archive[id];
+
+// One card per thread: the newest story carries the earlier ones as its timeline.
+const byThread = new Map();
+for (const rec of Object.values(archive)) {
+  const t = threadOf(rec);
+  if (!byThread.has(t)) byThread.set(t, []);
+  byThread.get(t).push(rec);
+}
+for (const st of current) {
+  const members = (byThread.get(st.threadId) || []).filter((r) => r.id !== st.id);
+  const later = members.some((r) => Date.parse(r.published) > Date.parse(st.published) && current.some((c) => c.id === r.id));
+  if (later) { st.hiddenInThread = true; continue; }
+  st.timeline = members
+    .filter((r) => Date.parse(r.published) <= Date.parse(st.published))
+    .sort((a, b) => Date.parse(a.published) - Date.parse(b.published))
+    .map((r) => ({ id: r.id, title: r.title, date: r.published, source: r.source, url: r.url, note: r.note }));
+}
+
+// --- 6. CVE details ----------------------------------------------------------------
+
+const shown = current.filter((s) => !s.hiddenInThread);
+const allCves = [...new Set(shown.flatMap((s) => s.cves))];
+if (allCves.length) {
+  log(`Looking up ${allCves.length} CVEs…`);
+  await enrichCves(allCves, cveCache, log);
+}
+const archivedCves = new Set(Object.values(archive).flatMap((r) => r.cves || []));
+for (const id of Object.keys(cveCache)) if (!archivedCves.has(id) && !allCves.includes(id)) delete cveCache[id];
+
+// --- 7. rank and output --------------------------------------------------------------
+
+for (const st of shown) {
+  st.base = baseScore(st) + (st.inKev ? 8 : 0) + (st.timeline?.length ? 5 : 0);
+  const exploited = st.cves.some((c) => cveCache[c]?.exploitation === 'active' || (cveCache[c]?.epss ?? 0) >= 0.5);
+  if (exploited && !st.kev) st.base += 4;
+}
+
+function toOutput(st) {
+  const out = {
+    id: st.id,
+    key: contentKey(st),
+    title: st.title,
+    summary: st.summary,
+    whyItMatters: st.whyItMatters,
+    category: st.category,
+    importance: st.importance || null,
+    deepDive: st.deepDive || undefined,
+    summarizedBy: st.summarizedBy || 'feed',
+    score: finalScore(st, now),
+    published: st.published,
+    updated: st.updated,
+    cves: st.cves,
+    inKev: st.inKev || undefined,
+    sources: st.items.map((i) => ({ name: i.sourceName, type: i.sourceType, title: i.title, url: i.url, published: i.published, firstSeen: i.firstSeen })),
+  };
+  if (st.timeline?.length) { out.timeline = st.timeline; out.followUpNote = st.followUpNote; }
+  const cveInfo = {};
+  for (const c of st.cves) {
+    const d = cveCache[c];
+    if (d && !d.missing) cveInfo[c] = { cvss: d.cvss, severity: d.severity, epss: d.epss, epssPercentile: d.epssPercentile, exploitation: d.exploitation, title: d.title };
+  }
+  if (Object.keys(cveInfo).length) out.cveInfo = cveInfo;
+  if (st.kev) out.kev = st.kev.map((k) => ({ cve: k.cve, vendor: k.vendor, product: k.product, name: k.name, dueDate: k.dueDate, ransomware: k.ransomware }));
+  return out;
+}
+
+const ranked = shown.map(toOutput).sort((a, b) => b.score - a.score);
+const final = ranked.filter((s, i) => i < MAX_STORIES || s.deepDive);
+
+// The week's most important stories, by importance rather than freshness.
+const weekScore = (st) => (st.importance ? st.base * 0.4 + st.importance * 14 : st.base);
+const weekTop = shown
+  .filter((s) => ageOf(s.published) <= 7 * DAY && final.some((f) => f.id === s.id))
+  .sort((a, b) => weekScore(b) - weekScore(a))
+  .slice(0, 10);
+let recap = state.recap || null;
+if (claude && weekTop.length >= 3 && (!recap || ageOf(recap.generatedAt) > RECAP_EVERY_HOURS * HOUR)) {
+  log('Writing weekly recap…');
+  const text = await claude.weeklyRecap(weekTop, log);
+  if (text) recap = { text, generatedAt: nowIso };
+}
+if (!claude) recap = null;
+
+if (claude) {
+  const u = claude.claudeUsage;
+  log(`Claude (${claude.summarizerModel}): ${u.input} input + ${u.output} output tokens this run`);
+}
 
 const briefing = {
-  version: 1,
-  generatedAt: new Date(now).toISOString(),
-  summarizer: summarizerModel ? 'claude' : 'feed',
+  version: 2,
+  generatedAt: nowIso,
+  summarizer: claude ? 'claude' : 'feed',
   updateEveryHours: 1, // keep in step with the cron schedule in .github/workflows/briefing.yml
   repo: process.env.GITHUB_REPOSITORY || null,
   sources: status.sort((a, b) => a.id.localeCompare(b.id)),
+  week: { storyIds: weekTop.map((s) => s.id), recap: recap?.text || null, recapAt: recap?.generatedAt || null },
   stories: final,
-  mergedUrls: mergedUrls.slice(-300),
 };
 
+// Keep only cached follow-up decisions that still involve archived stories.
+for (const k of Object.keys(pairCache)) {
+  const [a, b] = k.split('|');
+  if (!archive[a] || !archive[b]) delete pairCache[k];
+}
+const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap };
+
 await mkdir(OUT_DIR, { recursive: true });
-await writeFile(OUT_FILE, JSON.stringify(briefing));
-log(`Wrote ${final.length} stories to site/data/briefing.json`);
-for (const s of final.slice(0, 10)) log(`  ${String(s.score).padStart(5)}  [${s.category}] ${s.title} (${s.sources.length} src)`);
+await writeFile(new URL('briefing.json', OUT_DIR), JSON.stringify(briefing));
+await writeFile(new URL('state.json', OUT_DIR), JSON.stringify(newState));
+log(`Wrote ${final.length} stories (${final.filter((s) => s.deepDive).length} deep dives, ${final.filter((s) => s.timeline).length} with timelines); archive holds ${Object.keys(archive).length}`);
+for (const s of final.slice(0, 10)) log(`  ${String(s.score).padStart(5)}  [${s.category}] ${s.title} (${s.sources.length} src${s.timeline ? `, update to ${s.timeline.length}` : ''})`);

@@ -19,7 +19,7 @@ const STOP = new Set(('a an and are as at be by can could for from has have how 
   'was were what when which who will with after over new says said report reports researchers security cyber attack attacks ' +
   'hackers hacker update updates warns warning more than about amid just now why your you our we us out up via vs').split(' '));
 
-function tokens(title) {
+export function tokens(title) {
   return new Set(
     title.toLowerCase()
       .replace(/[’']s\b/g, '')
@@ -29,7 +29,7 @@ function tokens(title) {
   );
 }
 
-function jaccard(a, b) {
+export function jaccard(a, b) {
   let inter = 0;
   for (const t of a) if (b.has(t)) inter++;
   return { inter, j: inter / (a.size + b.size - inter || 1) };
@@ -68,6 +68,10 @@ export function cluster(items) {
   });
   return [...groups.values()];
 }
+
+// Postmortems, root-cause analyses, incident write-ups and other long-form retrospectives.
+const DEEP_DIVE = /\bpost[- ]?mortem\b|\bpost[- ]incident\b|\broot[- ]cause\b|\bincident (report|review|analysis)\b|\bfinal report\b|\bafter[- ]action\b|\blessons learned\b|\bretrospective\b|\bwhat (went wrong|happened)\b|\b(inside|anatomy of|timeline of|deep dive|a look back)\b|\bavailability report\b|\bcase study\b|\binvestigation (into|of)\b|\breport (finds|reveals|details)\b/i;
+export const looksLikeDeepDive = (title) => DEEP_DIVE.test(title);
 
 // --- scoring ------------------------------------------------------------------
 

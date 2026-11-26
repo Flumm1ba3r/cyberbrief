@@ -35,6 +35,8 @@ jobs:
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
           # The live briefing, so summaries from earlier runs are reused instead of paid for again.
           PREVIOUS_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/briefing.json
+          # Story archive, cached CVE details and earlier decisions, for follow-ups and to avoid repeat work.
+          STATE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/state.json
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
