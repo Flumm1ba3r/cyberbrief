@@ -200,10 +200,15 @@ function matches(story, words) {
   return words.every((w) => hay.includes(w));
 }
 
+// "CVE" is a filter across categories: every story that names at least one CVE.
+const hasCve = (s) => (s.cves || []).length > 0;
+const inCategory = (s, c) => c === 'All' || (c === 'CVE' ? hasCve(s) : s.category === c);
+
 function renderChips(base) {
   const counts = new Map();
   for (const s of base) counts.set(s.category, (counts.get(s.category) || 0) + 1);
-  const cats = ['All', ...Object.keys(CATEGORY_VARS).filter((c) => counts.has(c))];
+  const cveCount = base.filter(hasCve).length;
+  const cats = ['All', ...(cveCount ? ['CVE'] : []), ...Object.keys(CATEGORY_VARS).filter((c) => counts.has(c))];
   if (!cats.includes(state.category)) state.category = 'All';
   const chips = $('#chips');
   chips.replaceChildren(
@@ -214,7 +219,7 @@ function renderChips(base) {
       b.textContent = SHORT[c] || c;
       const count = document.createElement('span');
       count.className = 'count';
-      count.textContent = c === 'All' ? base.length : counts.get(c);
+      count.textContent = c === 'All' ? base.length : c === 'CVE' ? cveCount : counts.get(c);
       b.append(count);
       b.addEventListener('click', () => { state.category = c; state.limit = PAGE; render(); });
       return b;
@@ -227,7 +232,7 @@ function render() {
   const base = baseSet();
   renderChips(base);
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = base.filter((s) => (state.category === 'All' || s.category === state.category) && matches(s, words));
+  const shown = base.filter((s) => inCategory(s, state.category) && matches(s, words));
 
   if (!shown.length) {
     const p = document.createElement('p');
