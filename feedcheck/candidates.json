@@ -211,10 +211,10 @@
       "id": "msrc",
       "type": "vendor",
       "discover": [
-        "https://msrc.microsoft.com/blog/"
+        "https://www.microsoft.com/en-us/msrc/blog"
       ],
       "guess": [
-        "https://msrc.microsoft.com/blog/feed"
+        "https://api.msrc.microsoft.com/update-guide/rss"
       ]
     }
   ]
