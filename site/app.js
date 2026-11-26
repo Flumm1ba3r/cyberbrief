@@ -41,7 +41,10 @@ const state = {
   fetchedAt: 0,
   watch: store.get('watch', []), // watchlist terms
   hideRead: store.get('hideRead', false),
+  compact: store.get('compact', false),
+  muted: store.get('muted', { sources: [], categories: [] }),
 };
+document.body.classList.toggle('compact', state.compact);
 store.set('lastVisit', Date.now());
 
 const $ = (sel) => document.querySelector(sel);
@@ -95,6 +98,9 @@ function watchHit(s) {
 
 const isNew = (s) => state.since && s.sources.some((src) => Date.parse(src.firstSeen || src.published) > state.since);
 const isSaved = (id) => state.saved.some((s) => s.id === id);
+// A story is muted when its category is muted, or every source covering it is.
+const isMuted = (s) => state.muted.categories.includes(s.category) ||
+  (s.sources.length > 0 && s.sources.every((src) => state.muted.sources.includes(src.name)));
 
 function markRead(id) {
   if (state.read.has(id)) return;
@@ -117,6 +123,40 @@ function toggleSave(story, btn) {
 
 // --- rendering ------------------------------------------------------------------
 
+/** Fill `ol` with a story's timeline: earlier developments, then the story itself. */
+function buildTimeline(story, ol) {
+  for (const t of [...(story.timeline || []), { title: story.title, date: story.published, source: story.sources[0].name, url: story.sources[0].url, current: true }]) {
+    const li = document.createElement('li');
+    if (t.current) li.className = 'current';
+    const when = document.createElement('span');
+    when.className = 'tl-date';
+    when.textContent = `${new Date(t.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${t.source}`;
+    const url = safeUrl(t.url);
+    const title = document.createElement(url ? 'a' : 'span');
+    title.className = 'tl-title';
+    title.textContent = t.title;
+    if (url) { title.href = url; title.target = '_blank'; title.rel = 'noopener noreferrer'; }
+    li.append(when, title);
+    if (t.note) {
+      const n = document.createElement('span');
+      n.className = 'tl-note';
+      n.textContent = t.note;
+      li.append(n);
+    }
+    ol.append(li);
+  }
+  return ol;
+}
+
+function cveLink(c, info) {
+  const a = document.createElement('a');
+  a.href = `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(c)}`;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = c;
+  return a;
+}
+
 function card(story) {
   const el = tpl.content.firstElementChild.cloneNode(true);
   el.dataset.id = story.id;
@@ -138,8 +178,18 @@ function card(story) {
   const n = new Set(story.sources.map((s) => s.name)).size;
   el.querySelector('.when').textContent = `${ago(story.updated || story.published)}${n > 1 ? ` · ${n} sources` : ''}`;
 
-  el.querySelector('.title').textContent = story.title;
+  const titleEl = el.querySelector('.title');
+  titleEl.textContent = story.title;
+  titleEl.tabIndex = 0;
+  titleEl.setAttribute('role', 'link');
   el.querySelector('.summary').textContent = story.summary;
+  // Tapping the headline opens the story page. In compact mode, tapping a collapsed row first expands it.
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, .timeline, .others')) return;
+    if (state.compact && !el.classList.contains('open')) { el.classList.add('open'); return; }
+    if (e.target.closest('.title, .summary, .upd-note')) openStory(story.id);
+  });
+  titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') openStory(story.id); });
   const timeline = story.timeline || [];
   if (timeline.length) {
     el.querySelector('.upd').hidden = false;
@@ -147,30 +197,10 @@ function card(story) {
     note.hidden = false;
     note.textContent = story.followUpNote || `New development in a story from ${dayLabel(timeline[0].date).toLowerCase()}`;
     const btn = el.querySelector('.tl-btn');
-    const ol = el.querySelector('.timeline');
+    const ol = buildTimeline(story, el.querySelector('.timeline'));
     btn.hidden = false;
     btn.textContent = `Timeline (${timeline.length + 1})`;
     btn.setAttribute('aria-expanded', 'false');
-    for (const t of [...timeline, { title: story.title, date: story.published, source: story.sources[0].name, url: story.sources[0].url, current: true }]) {
-      const li = document.createElement('li');
-      if (t.current) li.className = 'current';
-      const when = document.createElement('span');
-      when.className = 'tl-date';
-      when.textContent = `${new Date(t.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${t.source}`;
-      const url = safeUrl(t.url);
-      const title = document.createElement(url ? 'a' : 'span');
-      title.className = 'tl-title';
-      title.textContent = t.title;
-      if (url) { title.href = url; title.target = '_blank'; title.rel = 'noopener noreferrer'; }
-      li.append(when, title);
-      if (t.note) {
-        const n = document.createElement('span');
-        n.className = 'tl-note';
-        n.textContent = t.note;
-        li.append(n);
-      }
-      ol.append(li);
-    }
     btn.addEventListener('click', () => {
       const open = ol.hidden;
       ol.hidden = !open;
@@ -335,7 +365,8 @@ function render() {
   renderChips(base);
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
   const hideRead = state.hideRead && state.view !== 'saved';
-  const matching = base.filter((s) => inCategory(s, state.category) && matches(s, words));
+  const unmuted = state.view === 'saved' ? base : base.filter((s) => !isMuted(s));
+  const matching = unmuted.filter((s) => inCategory(s, state.category) && matches(s, words));
   const shown = hideRead ? matching.filter((s) => !state.read.has(s.id)) : matching;
 
   const nodes = [];
@@ -379,6 +410,14 @@ function render() {
     nodes.push(b);
   }
   list.replaceChildren(...nodes);
+  updateBadge();
+}
+
+// Home-screen icon badge (installed app only): unread stories from the last 24 hours. It refreshes when the app runs.
+function updateBadge() {
+  if (!('setAppBadge' in navigator) || !state.data) return;
+  const n = state.data.stories.filter((s) => Date.now() - Date.parse(s.updated || s.published) < 86400000 && !state.read.has(s.id) && !isMuted(s)).length;
+  (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
 
 const timeOf = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -437,13 +476,12 @@ function renderStatus() {
   const foot = $('#foot');
   const p = document.createElement('p');
   p.textContent = `${d.summarizer === 'claude' ? 'Summaries and ranking by Claude, from' : 'Summaries are the outlets’ own excerpts, from'} ${ok.length} of ${d.sources.length} sources. Briefing built ${new Date(d.generatedAt).toLocaleString()}; updates every ${d.updateEveryHours === 1 || !d.updateEveryHours ? 'hour' : `${d.updateEveryHours} hours`}. `;
-  if (d.repo && /^[\w.-]+\/[\w.-]+$/.test(d.repo)) {
-    const a = document.createElement('a');
-    a.href = `https://github.com/${d.repo}/actions/workflows/briefing.yml`;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = 'Update now on GitHub ↗';
-    p.append(a);
+  const extra = [];
+  if (d.health?.claudeError) {
+    const h = document.createElement('p');
+    h.className = 'bad';
+    h.textContent = `Claude summaries unavailable since ${new Date(d.health.claudeError.since).toLocaleString()} (${d.health.claudeError.error}). Showing the outlets’ excerpts meanwhile.`;
+    extra.push(h);
   }
   const det = document.createElement('details');
   const sum = document.createElement('summary');
@@ -457,7 +495,11 @@ function renderStatus() {
     ul.append(li);
   }
   det.append(sum, ul);
-  foot.replaceChildren(p, det);
+  foot.replaceChildren(p, ...extra, det);
+  const ageH = (Date.now() - Date.parse(d.generatedAt)) / 3600000;
+  if (ageH > 3 && !$('#banner').dataset.offline) {
+    banner(`This briefing is ${Math.round(ageH)} hours old, so the hourly updates may be paused. Check under ⚙ settings → “Update now on GitHub”.`);
+  }
 }
 
 function banner(text) {
@@ -484,6 +526,7 @@ async function load(manual = false) {
     state.fetchedAt = Date.now();
     const offline = res.headers.get('x-cyberbrief-cache') === 'offline';
     banner(offline ? `You’re offline. Showing the briefing from ${ago(data.generatedAt)}.` : null);
+    $('#banner').dataset.offline = offline ? '1' : '';
     if (manual && offline) {
       setStatus('Offline · showing saved briefing', true);
     } else if (manual && before && before.generatedAt !== data.generatedAt) {
@@ -532,10 +575,40 @@ $('#q').addEventListener('input', (e) => {
 $('#refresh').addEventListener('click', () => load(true));
 
 const dlg = $('#settings-dlg');
+function muteChips(container, kind, names) {
+  container.replaceChildren(...names.map((name) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = SHORT[name] || name;
+    const on = () => state.muted[kind].includes(name);
+    b.setAttribute('aria-pressed', String(on()));
+    b.addEventListener('click', () => {
+      state.muted[kind] = on() ? state.muted[kind].filter((n) => n !== name) : [...state.muted[kind], name];
+      store.set('muted', state.muted);
+      b.setAttribute('aria-pressed', String(on()));
+    });
+    return b;
+  }));
+}
+
 $('#settings').addEventListener('click', () => {
   $('#watch').value = state.watch.join(', ');
   $('#hide-read').checked = state.hideRead;
+  $('#compact').checked = state.compact;
+  muteChips($('#mute-cats'), 'categories', Object.keys(CATEGORY_VARS));
+  const names = [...new Set([...(state.data?.sources || []).map((x) => x.name), ...state.muted.sources])].sort((a, b) => a.localeCompare(b));
+  muteChips($('#mute-sources'), 'sources', names);
+  const repo = state.data?.repo;
+  const link = $('#update-link');
+  link.hidden = !(repo && /^[\w.-]+\/[\w.-]+$/.test(repo));
+  if (!link.hidden) link.href = `https://github.com/${repo}/actions/workflows/briefing.yml`;
   dlg.showModal();
+});
+$('#compact').addEventListener('change', (e) => {
+  state.compact = e.target.checked;
+  store.set('compact', state.compact);
+  document.body.classList.toggle('compact', state.compact);
+  render();
 });
 dlg.addEventListener('close', () => {
   const terms = [...new Set($('#watch').value.split(/[,\n]/).map((t) => t.trim()).filter((t) => t.length >= 2))].slice(0, 40);
@@ -560,9 +633,177 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - state.fetchedAt > 10 * 60 * 1000) load();
 });
 
+// --- story page (#/story/<id>) ------------------------------------------------------
+
+const detail = $('#detail');
+const findStory = (id) => state.data?.stories.find((s) => s.id === id) || state.saved.find((s) => s.id === id);
+let openedInApp = false;
+
+function openStory(id) {
+  openedInApp = true;
+  location.hash = `#/story/${encodeURIComponent(id)}`;
+}
+
+function closeStory() {
+  if (openedInApp) history.back();
+  else history.replaceState(null, '', location.pathname + location.search);
+  openedInApp = false;
+  route();
+}
+
+function section(title, ...children) {
+  const sec = document.createElement('section');
+  const h = document.createElement('h2');
+  h.textContent = title;
+  sec.append(h, ...children);
+  return sec;
+}
+
+function renderStory(story) {
+  const body = detail.querySelector('.detail-body');
+  if (!story) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = state.data ? 'This story is no longer in the briefing.' : 'Loading…';
+    body.replaceChildren(p);
+    return;
+  }
+  const nodes = [];
+  const meta = card(story).querySelector('.meta');
+  meta.querySelector('.when').textContent = `${new Date(story.published).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+  const h1 = document.createElement('h1');
+  h1.textContent = story.title;
+  nodes.push(meta, h1);
+  if (story.timeline?.length && story.followUpNote) {
+    const n = document.createElement('p');
+    n.className = 'upd-note';
+    n.textContent = story.followUpNote;
+    nodes.push(n);
+  }
+  const sum = document.createElement('p');
+  sum.className = 'summary';
+  sum.textContent = story.summary;
+  nodes.push(sum);
+  if (story.whyItMatters) {
+    const why = document.createElement('p');
+    why.className = 'why';
+    const b = document.createElement('strong');
+    b.textContent = 'Why it matters ';
+    why.append(b, story.whyItMatters);
+    nodes.push(why);
+  }
+
+  const reasons = [...(story.reasons || [])];
+  const hit = watchHit(story);
+  if (hit) reasons.unshift(`Matches your watchlist: ${hit}`);
+  if (reasons.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'reasons';
+    for (const r of reasons) { const li = document.createElement('li'); li.textContent = r; ul.append(li); }
+    nodes.push(section('Why it’s in your briefing', ul));
+  }
+
+  const srcList = document.createElement('ul');
+  srcList.className = 'src-list';
+  for (const src of story.sources) {
+    const url = safeUrl(src.url);
+    const li = document.createElement('li');
+    const a = document.createElement(url ? 'a' : 'span');
+    if (url) { a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.addEventListener('click', () => markRead(story.id)); }
+    const name = document.createElement('span');
+    name.className = 'src';
+    name.textContent = `${src.name} · ${new Date(src.published).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+    a.append(name, document.createTextNode(`${src.title} ↗`));
+    li.append(a);
+    srcList.append(li);
+  }
+  nodes.push(section(story.sources.length > 1 ? `Sources (${story.sources.length})` : 'Source', srcList));
+
+  if (story.timeline?.length) nodes.push(section('Timeline', buildTimeline(story, Object.assign(document.createElement('ol'), { className: 'timeline' }))));
+
+  const cves = story.cves || [];
+  if (cves.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'cve-list';
+    const kevBy = new Map((story.kev || []).map((k) => [k.cve, k]));
+    for (const c of cves) {
+      const info = story.cveInfo?.[c] || {};
+      const k = kevBy.get(c);
+      const li = document.createElement('li');
+      const head = document.createElement('div');
+      head.className = 'cve-head';
+      head.append(cveLink(c));
+      if (info.cvss != null) {
+        const sev = document.createElement('span');
+        sev.className = `sev sev-${info.severity || 'none'}`;
+        sev.textContent = `CVSS ${info.cvss.toFixed(1)} ${info.severity || ''}`;
+        head.append(sev);
+      }
+      li.append(head);
+      const facts = [];
+      if (k) facts.push(`${k.vendor} ${k.product}: ${k.name}`);
+      else if (info.title) facts.push(info.title);
+      if (info.epss != null) facts.push(`${info.epss < 0.01 ? 'Under 1' : Math.round(info.epss * 100)}% chance of exploitation in the next 30 days (EPSS)`);
+      if (info.exploitation === 'active') facts.push('CISA: actively exploited');
+      else if (info.exploitation === 'poc') facts.push('CISA: proof-of-concept exploit public');
+      if (k?.dueDate) facts.push(`US federal patch deadline: ${k.dueDate}`);
+      if (k?.ransomware) facts.push('Known to be used in ransomware campaigns');
+      for (const f of facts) { const d = document.createElement('div'); d.className = 'cve-fact'; d.textContent = f; li.append(d); }
+      ul.append(li);
+    }
+    nodes.push(section(cves.length > 1 ? `Vulnerabilities (${cves.length})` : 'Vulnerability', ul));
+  }
+
+  const mutes = document.createElement('p');
+  mutes.className = 'mute-line';
+  const muteBtn = (label, kind, name) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'linkish';
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      if (!state.muted[kind].includes(name)) state.muted[kind] = [...state.muted[kind], name];
+      store.set('muted', state.muted);
+      b.textContent = 'Muted ✓ (undo in settings)';
+      b.disabled = true;
+      render();
+    });
+    return b;
+  };
+  mutes.append('Not useful? ', muteBtn(`Mute ${story.sources[0].name}`, 'sources', story.sources[0].name), ' · ', muteBtn(`Mute “${SHORT[story.category] || story.category}”`, 'categories', story.category));
+  nodes.push(mutes);
+  body.replaceChildren(...nodes);
+  body.scrollTop = 0;
+  detail.scrollTop = 0;
+
+  const save = detail.querySelector('.save');
+  save.setAttribute('aria-pressed', String(isSaved(story.id)));
+  save.onclick = () => toggleSave(story, save);
+  const share = detail.querySelector('.share');
+  const leadUrl = safeUrl(story.sources[0].url);
+  share.hidden = !(navigator.share && leadUrl);
+  share.onclick = () => navigator.share({ title: story.title, url: leadUrl }).catch(() => {});
+}
+
+function route() {
+  const m = location.hash.match(/^#\/story\/(.+)$/);
+  if (m) {
+    renderStory(findStory(decodeURIComponent(m[1])));
+    detail.hidden = false;
+    document.body.classList.add('detail-open');
+  } else {
+    detail.hidden = true;
+    document.body.classList.remove('detail-open');
+  }
+}
+window.addEventListener('hashchange', route);
+detail.querySelector('.back').addEventListener('click', closeStory);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !detail.hidden) closeStory(); });
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
 render();
-load();
+route();
+load().then(route);

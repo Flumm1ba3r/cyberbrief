@@ -11,7 +11,7 @@ A personal cybersecurity news briefing that works on your phone. Every hour it c
 - **Deep dives**: postmortems, root-cause reports and incident investigations are marked and stay available for 30 days.
 - **CVE details**: each CVE shows its CVSS severity (from the official CVE record) and its EPSS score, the probability of exploitation in the next 30 days (from FIRST).
 - **Week**: the 10 most important stories of the past 7 days, with a short recap written by Claude.
-- **The app** (`site/`) is a static web app hosted on GitHub Pages. You can install it on your phone's home screen, and it works offline with the last briefing. It has Top, Latest, Week and Saved views, filters (watchlist, CVE, deep dives, categories) and search. Settings hold your watchlist (vendors or products you care about, highlighted and ranked higher), "hide stories I've read" and "mark all as read". Watchlist, saved stories and read state are stored on your device only.
+- **The app** (`site/`) is a static web app hosted on GitHub Pages. You can install it on your phone's home screen, and it works offline with the last briefing. It has Top, Latest, Week and Saved views, filters (watchlist, CVE, deep dives, categories) and search. Tap a headline for the story page: every source, the timeline, CVE details and why the story is in your briefing. Settings hold your watchlist (vendors or products you care about, highlighted and ranked higher), a compact headlines-only list, muted sources and categories, "hide stories I've read" and "mark all as read". Installed on a phone, the app icon shows how many stories from the last 24 hours you haven't read (updated when the app is opened). Watchlist, saved stories and read state are stored on your device only.
 
 The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/build-briefing.mjs` writes `site/data/briefing.json` (what the app shows) and `site/data/state.json` (the archive and caches the next run builds on), and the `site/` folder is deployed to Pages.
 
@@ -30,9 +30,13 @@ CyberBrief can send critical stories to your phone with the free [ntfy](https://
 2. Add it as a repository **secret** named `NTFY_TOPIC`. The next run sends a "CyberBrief alerts are on" test message.
 3. Optionally add a repository **variable** `ALERT_WATCHLIST`, e.g. `Microsoft, Fortinet, Cisco, Singapore`.
 
+4. Optionally add a daily top-5 notification: a **secret** (or variable) `DIGEST` with the local time and time zone, e.g. `08:00 Asia/Singapore`. A secret keeps your time zone out of the public run logs.
+
 You get an alert for stories rated 5/5 (critical), for watchlist matches that are exploited (KEV, actively exploited CVE) or rated 4+, and for follow-ups to important stories. Each story alerts once; at most 4 alerts per run, with any extra rolled into one summary.
 
-GitHub pauses scheduled workflows in public repositories after 60 days without any commits. If the briefing stops updating, re-enable it under Actions.
+CyberBrief also tells you when it needs attention: an alert when a source has been failing for a day, when Claude summaries stop working (e.g. no API credit left) and when they recover. The app warns when the briefing is more than 3 hours old.
+
+GitHub pauses scheduled workflows in public repositories after 60 days without commits. The weekly `Keep schedule alive` workflow (`.github/workflows/keepalive.yml`) re-enables the schedule and, if the repository has been quiet for 45 days, commits a timestamp to `.github/keepalive`.
 
 ## Local development
 

@@ -12,6 +12,9 @@ const SERVER = process.env.NTFY_SERVER || 'https://ntfy.sh';
 const MAX_PER_RUN = 4;
 const FRESH_HOURS = 12; // only alert stories CyberBrief first saw recently, never a backlog
 
+/** Link that opens a story inside the app (see the #/story/ route in site/app.js). */
+export const storyLink = (appUrl, id) => (appUrl ? `${appUrl}#/story/${encodeURIComponent(id)}` : null);
+
 const topicHash = (t) => createHash('sha256').update(t).digest('hex').slice(0, 16);
 
 function watchTerms() {
@@ -88,10 +91,10 @@ export async function sendAlerts({ candidates, alerted, alertState, appUrl, log 
         message: `${note}${out.summary}`.slice(0, 1000),
         priority: reason.priority,
         tags: [reason.priority === 5 ? 'rotating_light' : 'warning'],
-        click: lead.url,
+        // Tapping opens the story in CyberBrief (summary, all sources, timeline); a button goes straight to the article.
+        click: storyLink(appUrl, out.id) || lead.url,
         actions: [
           { action: 'view', label: `Read on ${lead.name}`.slice(0, 40), url: lead.url },
-          ...(appUrl ? [{ action: 'view', label: 'Open CyberBrief', url: appUrl }] : []),
         ],
       }, log);
       alerted[out.id] = new Date(now).toISOString();
@@ -115,3 +118,111 @@ export async function sendAlerts({ candidates, alerted, alertState, appUrl, log 
 }
 
 export { watchTerms };
+
+// --- health -----------------------------------------------------------------------------
+
+const DAY = 24 * 3600 * 1000;
+
+/**
+ * Track failing sources and Claude errors across runs in `health` (kept in state.json), and alert once a source
+ * has failed for a day, or when Claude stops working (repeated at most daily). Returns what the app should show.
+ */
+export async function checkHealth({ health, status, claudeStats, appUrl, log }) {
+  const now = Date.now();
+  const iso = new Date(now).toISOString();
+  health.sources ||= {};
+  for (const s of status) {
+    if (s.ok) { delete health.sources[s.id]; continue; }
+    health.sources[s.id] ||= { name: s.name, since: iso };
+    health.sources[s.id].error = s.error;
+  }
+  let recovered = false;
+  if (claudeStats && claudeStats.attempted > 0) {
+    if (claudeStats.succeeded === 0) {
+      health.claude ||= { since: iso };
+      health.claude.error = claudeStats.lastError;
+    } else if (health.claude) {
+      recovered = !!health.claude.alertedAt;
+      delete health.claude;
+    }
+  }
+
+  const topic = process.env.NTFY_TOPIC?.trim();
+  if (topic) {
+    try {
+      const longFailing = Object.values(health.sources).filter((s) => now - Date.parse(s.since) >= DAY && !s.alerted);
+      if (longFailing.length) {
+        await send(topic, {
+          title: `CyberBrief: ${longFailing.length} ${longFailing.length === 1 ? 'source has' : 'sources have'} been failing for a day`,
+          message: `${longFailing.map((s) => `• ${s.name}: ${s.error}`).join('\n')}\n\nThe briefing still works without them. If this persists, the feed address may have changed.`.slice(0, 1000),
+          priority: 3,
+          tags: ['wrench'],
+          ...(appUrl ? { click: appUrl } : {}),
+        }, log);
+        for (const s of longFailing) s.alerted = iso;
+      }
+      if (health.claude && (!health.claude.alertedAt || now - Date.parse(health.claude.alertedAt) >= DAY)) {
+        await send(topic, {
+          title: 'CyberBrief: Claude summaries stopped working',
+          message: `Error: ${health.claude.error}\n\nThe app falls back to the outlets' own excerpts. Common causes: no API credit left, or the key was revoked. Check the Claude Console.`.slice(0, 1000),
+          priority: 4,
+          tags: ['warning'],
+          click: 'https://console.anthropic.com',
+        }, log);
+        health.claude.alertedAt = iso;
+      }
+      if (recovered) {
+        await send(topic, { title: 'CyberBrief: Claude summaries are working again', message: 'No action needed.', priority: 2, tags: ['white_check_mark'] }, log);
+      }
+    } catch (e) {
+      log(`  Health alert failed: ${e.message}`);
+    }
+  }
+  return {
+    claudeError: health.claude ? { error: health.claude.error, since: health.claude.since } : null,
+    failingSources: Object.values(health.sources).filter((s) => now - Date.parse(s.since) >= 6 * 3600 * 1000).map((s) => ({ name: s.name, since: s.since, error: s.error })),
+  };
+}
+
+// --- daily digest -------------------------------------------------------------------------
+
+/** Parse the DIGEST setting, e.g. "08:00 Asia/Singapore" or "7" (hour, UTC). */
+function parseDigest(raw) {
+  const m = (raw || '').trim().match(/^(\d{1,2})(?::\d{2})?\s*([A-Za-z_]+\/[A-Za-z_\/+-]+|UTC)?$/);
+  if (!m || +m[1] > 23) return null;
+  return { hour: +m[1], tz: m[2] || 'UTC' };
+}
+
+function localParts(tz) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: +parts.hour };
+}
+
+/** Once a day at the configured local hour, send the top 5 stories. Returns the updated digest state. */
+export async function sendDigest({ stories, digestState, appUrl, log }) {
+  const topic = process.env.NTFY_TOPIC?.trim();
+  const cfg = parseDigest(process.env.DIGEST);
+  if (!topic || !process.env.DIGEST) return digestState;
+  if (!cfg) { log(`  DIGEST setting not understood: use e.g. "08:00 Asia/Singapore"`); return digestState; }
+  let local;
+  try { local = localParts(cfg.tz); } catch { log(`  DIGEST time zone not recognised: ${cfg.tz}`); return digestState; }
+  if (local.hour !== cfg.hour || digestState?.date === local.date) return digestState;
+  const recent = stories.filter((s) => Date.now() - Date.parse(s.published) < 24 * 3600 * 1000);
+  const top = (recent.length >= 3 ? recent : stories).slice(0, 5);
+  if (!top.length) return digestState;
+  try {
+    await send(topic, {
+      title: 'Your daily CyberBrief: top 5',
+      message: top.map((s, i) => `${i + 1}. ${s.title}`).join('\n').slice(0, 1000),
+      priority: 3,
+      tags: ['newspaper'],
+      ...(appUrl ? { click: appUrl } : {}),
+    }, log);
+    return { date: local.date };
+  } catch (e) {
+    log(`  Digest failed: ${e.message}`);
+    return digestState;
+  }
+}

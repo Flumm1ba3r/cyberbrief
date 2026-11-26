@@ -16,8 +16,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=5">
-  <script type="module" src="app.js?v=5"></script>
+  <link rel="stylesheet" href="styles.css?v=6">
+  <script type="module" src="app.js?v=6"></script>
 </head>
 <body>
   <header class="top">
@@ -71,12 +71,40 @@
         <input id="hide-read" type="checkbox">
         <span>Hide stories I’ve read</span>
       </label>
+      <label class="check">
+        <input id="compact" type="checkbox">
+        <span>Compact list (headlines only, tap to expand)</span>
+      </label>
+      <div class="field">
+        <span>Muted categories</span>
+        <div id="mute-cats" class="chips wrap" role="group" aria-label="Muted categories"></div>
+      </div>
+      <div class="field">
+        <span>Muted sources</span>
+        <div id="mute-sources" class="chips wrap" role="group" aria-label="Muted sources"></div>
+        <small class="muted">Muted stories are hidden everywhere except Saved. A story stays visible if any source covering it isn’t muted.</small>
+      </div>
+      <p class="field"><a id="update-link" target="_blank" rel="noopener noreferrer" hidden>Update now on GitHub ↗</a><small class="muted">Owner only: starts a new briefing build right away.</small></p>
       <div class="dlg-actions">
         <button id="mark-all" type="button" class="secondary">Mark all as read</button>
         <button value="close" class="primary">Done</button>
       </div>
     </form>
   </dialog>
+
+  <div id="detail" class="detail" role="dialog" aria-modal="true" aria-label="Story" hidden>
+    <div class="detail-bar">
+      <button class="back" type="button">‹ Back</button>
+      <span class="spacer"></span>
+      <button class="share icon-btn" type="button" aria-label="Share" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2l4 4-1.4 1.4L13 5.8V15h-2V5.8L9.4 7.4 8 6l4-4Zm-7 9h3v2H6v7h12v-7h-2v-2h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z"/></svg>
+      </button>
+      <button class="save icon-btn" type="button" aria-label="Save" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path class="outline" fill="currentColor" d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1Zm1 2v14.3l5-3.2 5 3.2V4H7Z"/><path class="filled" fill="currentColor" d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1Z"/></svg>
+      </button>
+    </div>
+    <article class="detail-body"></article>
+  </div>
 
   <template id="card-tpl">
     <article class="card">

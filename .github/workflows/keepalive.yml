@@ -1,0 +1,42 @@
+name: Keep schedule alive
+
+# GitHub pauses scheduled workflows in public repositories after 60 days without activity.
+# Once a week this re-enables the briefing schedule and, if the repository has been quiet for 45 days,
+# commits a timestamp so it counts as active.
+
+on:
+  schedule:
+    - cron: '41 4 * * 3' # weekly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # only for the timestamp commit
+      actions: write # to re-enable the workflows
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Re-enable scheduled workflows
+        run: |
+          for wf in briefing.yml keepalive.yml; do
+            gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/enable" && echo "enabled ${wf}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Commit a timestamp if the repository has been quiet for 45 days
+        run: |
+          last=$(git log -1 --format=%ct)
+          age_days=$(( ($(date +%s) - last) / 86400 ))
+          echo "Last commit ${age_days} days ago"
+          if [ "$age_days" -lt 45 ]; then exit 0; fi
+          date -u +%Y-%m-%dT%H:%M:%SZ > .github/keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "Keep scheduled workflows active"
+          git push

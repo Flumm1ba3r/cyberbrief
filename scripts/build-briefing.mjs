@@ -10,7 +10,7 @@ import {
   isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive,
 } from './lib/rank.mjs';
 import { enrichCves } from './lib/cve.mjs';
-import { alertReason, sendAlerts, watchTerms } from './lib/alerts.mjs';
+import { alertReason, sendAlerts, watchTerms, checkHealth, sendDigest } from './lib/alerts.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const OUT_DIR = new URL('site/data/', ROOT);
@@ -352,7 +352,24 @@ for (const id of Object.keys(cveCache)) if (!archivedCves.has(id) && !allCves.in
 for (const st of shown) {
   st.base = baseScore(st) + (st.inKev ? 8 : 0) + (st.timeline?.length ? 5 : 0);
   const exploited = st.cves.some((c) => cveCache[c]?.exploitation === 'active' || (cveCache[c]?.epss ?? 0) >= 0.5);
+  st.exploitedCve = exploited;
   if (exploited && !st.kev) st.base += 4;
+}
+
+/** Plain-language reasons a story ranks where it does, for the app's story page. */
+function rankingReasons(st) {
+  const r = [];
+  if (st.importance) r.push(`Rated ${st.importance}/5 for importance by Claude`);
+  const n = new Set(st.items.map((i) => i.sourceName)).size;
+  if (n > 1) r.push(`Covered by ${n} sources`);
+  if (st.kev) r.push('Newly added to CISA’s Known Exploited Vulnerabilities list');
+  else if (st.inKev) r.push('Its CVE is on CISA’s Known Exploited Vulnerabilities list');
+  if (!st.kev && (st.exploitedCve || st.category === 'Exploited vulnerability')) r.push('Being exploited in attacks');
+  if (st.cves.some((c) => (cveCache[c]?.cvss ?? 0) >= 9)) r.push('Critical CVSS severity (9.0+)');
+  if (st.timeline?.length) r.push(`Development in a story first reported ${new Date(st.timeline[0].date).toISOString().slice(0, 10)}`);
+  if (st.items.some((i) => i.sourceType === 'official')) r.push('Reported by an official agency');
+  if (st.deepDive) r.push('Postmortem or in-depth investigation');
+  return r.slice(0, 6);
 }
 
 function toOutput(st) {
@@ -380,6 +397,7 @@ function toOutput(st) {
     if (d && !d.missing) cveInfo[c] = { cvss: d.cvss, severity: d.severity, epss: d.epss, epssPercentile: d.epssPercentile, exploitation: d.exploitation, title: d.title };
   }
   if (Object.keys(cveInfo).length) out.cveInfo = cveInfo;
+  out.reasons = rankingReasons(st);
   if (st.kev) out.kev = st.kev.map((k) => ({ cve: k.cve, vendor: k.vendor, product: k.product, name: k.name, dueDate: k.dueDate, ransomware: k.ransomware }));
   return out;
 }
@@ -419,6 +437,11 @@ if (process.env.NTFY_TOPIC) {
 }
 for (const [id, at] of Object.entries(alerted)) if (ageOf(at) > ARCHIVE_DAYS * DAY) delete alerted[id];
 
+// Health: alert when sources keep failing or Claude stops working; the app shows it too.
+const healthState = state.health || {};
+const health = await checkHealth({ health: healthState, status, claudeStats: claude?.claudeStats, appUrl: process.env.APP_URL, log });
+const digestState = await sendDigest({ stories: final, digestState: state.digest, appUrl: process.env.APP_URL, log });
+
 if (claude) {
   const u = claude.claudeUsage;
   log(`Claude (${claude.summarizerModel}): ${u.input} input + ${u.output} output tokens this run`);
@@ -432,6 +455,7 @@ const briefing = {
   repo: process.env.GITHUB_REPOSITORY || null,
   sources: status.sort((a, b) => a.id.localeCompare(b.id)),
   week: { storyIds: weekTop.map((s) => s.id), recap: recap?.text || null, recapAt: recap?.generatedAt || null },
+  health,
   stories: final,
 };
 
@@ -440,7 +464,7 @@ for (const k of Object.keys(pairCache)) {
   const [a, b] = k.split('|');
   if (!archive[a] || !archive[b]) delete pairCache[k];
 }
-const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState };
+const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState, health: healthState, digest: digestState };
 
 await mkdir(OUT_DIR, { recursive: true });
 await writeFile(new URL('briefing.json', OUT_DIR), JSON.stringify(briefing));
