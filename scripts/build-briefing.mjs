@@ -228,7 +228,7 @@ const briefing = {
   version: 1,
   generatedAt: new Date(now).toISOString(),
   summarizer: summarizerModel ? 'claude' : 'feed',
-  updateEveryHours: 2, // keep in step with the cron schedule in .github/workflows/briefing.yml
+  updateEveryHours: 1, // keep in step with the cron schedule in .github/workflows/briefing.yml
   repo: process.env.GITHUB_REPOSITORY || null,
   sources: status.sort((a, b) => a.id.localeCompare(b.id)),
   stories: final,

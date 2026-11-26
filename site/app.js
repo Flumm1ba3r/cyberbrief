@@ -267,15 +267,52 @@ function render() {
   list.replaceChildren(...nodes);
 }
 
+const timeOf = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+/** When the next scheduled build should be live, or null if the last one is overdue. */
+function nextUpdate(data) {
+  // The workflow runs at minute 17 of every hour (UTC); publishing takes a minute or two.
+  const every = data.updateEveryHours || 1;
+  const d = new Date();
+  d.setUTCMinutes(19, 0, 0);
+  while (d.getUTCHours() % every !== 0 || d <= Date.now()) d.setUTCHours(d.getUTCHours() + 1);
+  const overdue = Date.now() - Date.parse(data.generatedAt) > (every + 0.5) * 3600 * 1000;
+  return overdue ? null : d;
+}
+
+function statusText(d) {
+  const next = nextUpdate(d);
+  return `Updated ${ago(d.generatedAt)} · ${next ? `next ${timeOf(next)}` : 'next update delayed'}`;
+}
+
+// The line under "CyberBrief": normally when the briefing was built and the next update is due;
+// briefly replaced by the result of tapping refresh.
+let flashTimer;
+function setStatus(text, flash = false) {
+  const el = $('#updated');
+  clearTimeout(flashTimer);
+  el.textContent = text;
+  el.classList.toggle('flash', flash);
+  if (flash) flashTimer = setTimeout(() => { el.classList.remove('flash'); if (state.data) el.textContent = statusText(state.data); }, 5000);
+}
+
 function renderStatus() {
   const d = state.data;
   if (!d) return;
-  $('#updated').textContent = `Updated ${ago(d.generatedAt)}`;
+  if (!$('#updated').classList.contains('flash')) setStatus(statusText(d));
   const ok = d.sources.filter((s) => s.ok);
   const bad = d.sources.filter((s) => !s.ok);
   const foot = $('#foot');
   const p = document.createElement('p');
-  p.textContent = `${d.summarizer === 'claude' ? 'Summaries and ranking by Claude, from' : 'Summaries are the outlets’ own excerpts, from'} ${ok.length} of ${d.sources.length} sources. Briefing built ${new Date(d.generatedAt).toLocaleString()}.`;
+  p.textContent = `${d.summarizer === 'claude' ? 'Summaries and ranking by Claude, from' : 'Summaries are the outlets’ own excerpts, from'} ${ok.length} of ${d.sources.length} sources. Briefing built ${new Date(d.generatedAt).toLocaleString()}; updates every ${d.updateEveryHours === 1 || !d.updateEveryHours ? 'hour' : `${d.updateEveryHours} hours`}. `;
+  if (d.repo && /^[\w.-]+\/[\w.-]+$/.test(d.repo)) {
+    const a = document.createElement('a');
+    a.href = `https://github.com/${d.repo}/actions/workflows/briefing.yml`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'Update now on GitHub ↗';
+    p.append(a);
+  }
   const det = document.createElement('details');
   const sum = document.createElement('summary');
   sum.textContent = bad.length ? `${bad.length} source${bad.length > 1 ? 's' : ''} failed this run` : 'All sources';
@@ -288,17 +325,7 @@ function renderStatus() {
     ul.append(li);
   }
   det.append(sum, ul);
-  const next = document.createElement('p');
-  next.textContent = `Updates every ${d.updateEveryHours || 2} hours. ${nextUpdateText(d)} `;
-  if (d.repo && /^[\w.-]+\/[\w.-]+$/.test(d.repo)) {
-    const a = document.createElement('a');
-    a.href = `https://github.com/${d.repo}/actions/workflows/briefing.yml`;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = 'Update now on GitHub ↗';
-    next.append(a);
-  }
-  foot.replaceChildren(p, next, det);
+  foot.replaceChildren(p, det);
 }
 
 function banner(text) {
@@ -312,23 +339,10 @@ function banner(text) {
 
 // --- data -------------------------------------------------------------------------
 
-const timeOf = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-
-function nextUpdateText(data) {
-  // The workflow runs at minute 17 of every 2nd hour (UTC); a run takes a minute or two to publish.
-  const every = data.updateEveryHours || 2;
-  const d = new Date();
-  d.setUTCMinutes(19, 0, 0);
-  while (d.getUTCHours() % every !== 0 || d <= Date.now()) d.setUTCHours(d.getUTCHours() + 1);
-  const overdue = Date.now() - Date.parse(data.generatedAt) > (every + 0.5) * 3600 * 1000;
-  // GitHub's scheduled runs are sometimes late; say so rather than promise a time that has passed.
-  return overdue ? 'An update is running late; GitHub sometimes delays scheduled runs.' : `Next update around ${timeOf(d)}.`;
-}
-
-let bannerTimer;
 async function load(manual = false) {
   const btn = $('#refresh');
   btn.classList.add('spinning');
+  if (manual) setStatus('Checking for updates…', true);
   const before = state.data;
   try {
     const res = await fetch(DATA_URL, { cache: 'no-cache' });
@@ -336,21 +350,17 @@ async function load(manual = false) {
     const data = await res.json();
     state.data = data;
     state.fetchedAt = Date.now();
-    const stale = res.headers.get('x-cyberbrief-cache') === 'offline';
-    clearTimeout(bannerTimer);
-    if (stale) {
-      banner(`You’re offline. Showing the briefing from ${ago(data.generatedAt)}.`);
-    } else if (manual && before) {
-      if (before.generatedAt === data.generatedAt) {
-        banner(`Already up to date (built ${timeOf(Date.parse(data.generatedAt))}). ${nextUpdateText(data)}`);
-      } else {
-        const oldIds = new Set(before.stories.map((s) => s.id));
-        const added = data.stories.filter((s) => !oldIds.has(s.id)).length;
-        banner(added ? `Updated: ${added} new ${added === 1 ? 'story' : 'stories'}.` : 'Updated. No new stories.');
-      }
-      bannerTimer = setTimeout(() => banner(null), 6000);
-    } else {
-      banner(null);
+    const offline = res.headers.get('x-cyberbrief-cache') === 'offline';
+    banner(offline ? `You’re offline. Showing the briefing from ${ago(data.generatedAt)}.` : null);
+    if (manual && offline) {
+      setStatus('Offline · showing saved briefing', true);
+    } else if (manual && before && before.generatedAt !== data.generatedAt) {
+      const oldIds = new Set(before.stories.map((s) => s.id));
+      const added = data.stories.filter((s) => !oldIds.has(s.id)).length;
+      setStatus(added ? `✓ ${added} new ${added === 1 ? 'story' : 'stories'}` : '✓ Updated · no new stories', true);
+    } else if (manual) {
+      const next = nextUpdate(data);
+      setStatus(`✓ Up to date · ${next ? `next update ${timeOf(next)}` : 'next update delayed'}`, true);
     }
     renderStatus();
     render();
@@ -358,13 +368,15 @@ async function load(manual = false) {
     if (!state.data) {
       banner('Couldn’t load the briefing. Check your connection and tap refresh.');
       list.replaceChildren();
-    } else {
-      banner('Couldn’t refresh. Showing the last briefing.');
     }
+    if (manual || !state.data) setStatus('Couldn’t refresh · check your connection', true);
   } finally {
     btn.classList.remove('spinning');
   }
 }
+
+// Keep "Updated … ago" current while the app stays open.
+setInterval(() => { if (state.data && !$('#updated').classList.contains('flash')) setStatus(statusText(state.data)); }, 60 * 1000);
 
 // --- events -------------------------------------------------------------------------
 

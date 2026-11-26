@@ -1,6 +1,6 @@
 # CyberBrief
 
-A personal cybersecurity news briefing that works on your phone. Every two hours it collects news from 25 established sources, groups the articles that cover the same event, ranks the stories by importance, and gives each one a short summary with a link to the full article.
+A personal cybersecurity news briefing that works on your phone. Every hour it collects news from 25 established sources, groups the articles that cover the same event, ranks the stories by importance, and gives each one a short summary with a link to the full article.
 
 ## How it works
 
@@ -15,7 +15,7 @@ The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/bu
 
 1. **Enable GitHub Pages**: Settings → Pages → Build and deployment → Source: **GitHub Actions**.
 2. **(Optional) Add Claude summaries**: Settings → Secrets and variables → Actions → New repository secret named `ANTHROPIC_API_KEY`. The default model is `claude-opus-5-5`. To use a cheaper one, add a repository *variable* `CLAUDE_MODEL`, e.g. `claude-haiku-5-5`.
-3. **Run it**: Actions → Briefing → Run workflow. After that it runs every 2 hours.
+3. **Run it**: Actions → Briefing → Run workflow. After that it runs every hour.
 4. **Open it** at `https://<your-username>.github.io/cyberbrief/`. On iPhone, tap Share → Add to Home Screen; on Android, use the browser menu → Install app.
 
 GitHub pauses scheduled workflows in public repositories after 60 days without any commits. If the briefing stops updating, re-enable it under Actions.

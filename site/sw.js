@@ -1,6 +1,6 @@
 // Offline support: everything is fetched from the network first, so updates show up immediately,
 // and the last copy is served from cache when offline.
-const SHELL_CACHE = 'cyberbrief-shell-v2';
+const SHELL_CACHE = 'cyberbrief-shell-v3';
 const DATA_CACHE = 'cyberbrief-data';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
@@ -9,11 +9,15 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL_CACHE && k !== DATA_CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const old = (await caches.keys()).filter((k) => k !== SHELL_CACHE && k !== DATA_CACHE);
+    await Promise.all(old.map((k) => caches.delete(k)));
+    await self.clients.claim();
+    // Pages opened under an older version are still running its code: reload them once.
+    if (old.length) {
+      for (const client of await self.clients.matchAll({ type: 'window' })) client.navigate(client.url).catch(() => {});
+    }
+  })());
 });
 
 async function briefing(request) {
