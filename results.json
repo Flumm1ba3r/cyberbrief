@@ -1,0 +1,371 @@
+{
+  "generatedAt": "2026-11-26T13:47:55.422Z",
+  "userAgent": "CyberBrief/0.1 (personal security-news reader; feed check)",
+  "results": [
+    {
+      "id": "azure-status",
+      "type": "postmortem",
+      "discoveryPages": [
+        {
+          "url": "https://azure.status.microsoft/en-us/status/history/",
+          "status": 200,
+          "found": []
+        }
+      ],
+      "feeds": [
+        {
+          "url": "https://azure.status.microsoft/en-us/status/feed/",
+          "status": 200,
+          "ok": true,
+          "ms": 32,
+          "contentType": "text/xml; charset=utf-8",
+          "etag": false,
+          "lastModified": true,
+          "parses": true,
+          "kind": "rss",
+          "items": 0,
+          "undated": 0,
+          "feedTitle": "Azure Status",
+          "newest": null,
+          "oldest": null,
+          "linkHosts": {}
+        },
+        {
+          "url": "https://rssfeed.azure.status.microsoft/en-us/status/feed/",
+          "status": 200,
+          "ok": true,
+          "ms": 43,
+          "contentType": "text/xml; charset=utf-8",
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 0,
+          "undated": 0,
+          "feedTitle": "Azure Status",
+          "newest": null,
+          "oldest": null,
+          "linkHosts": {}
+        }
+      ]
+    },
+    {
+      "id": "cloudflare-postmortems",
+      "type": "postmortem",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://blog.cloudflare.com/tag/post-mortem/rss/",
+          "status": 200,
+          "ok": true,
+          "ms": 113,
+          "contentType": "application/rss+xml; charset=utf-8",
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 20,
+          "undated": 0,
+          "feedTitle": "Posts tagged &quot;Post Mortem&quot;",
+          "newest": "2026-05-01T21:07:30.000Z",
+          "oldest": "2023-10-20T21:39:13.000Z",
+          "linkHosts": {
+            "blog.cloudflare.com": 20
+          }
+        },
+        {
+          "url": "https://blog.cloudflare.com/rss/",
+          "status": 200,
+          "ok": true,
+          "ms": 73,
+          "contentType": "application/rss+xml; charset=utf-8",
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 20,
+          "undated": 0,
+          "feedTitle": "Cloudflare Blog",
+          "newest": "2026-11-25T14:00:00.000Z",
+          "oldest": "2026-10-30T17:38:50.000Z",
+          "linkHosts": {
+            "blog.cloudflare.com": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "github-availability",
+      "type": "postmortem",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://github.blog/tag/github-availability-report/feed/",
+          "status": 200,
+          "ok": true,
+          "ms": 648,
+          "contentType": "application/rss+xml; charset=UTF-8",
+          "etag": true,
+          "lastModified": true,
+          "parses": true,
+          "kind": "rss",
+          "items": 10,
+          "undated": 0,
+          "feedTitle": "GitHub Availability Report Archives - The GitHub Blog",
+          "newest": "2026-11-13T00:20:16.000Z",
+          "oldest": "2026-02-11T23:12:34.000Z",
+          "linkHosts": {
+            "github.blog": 10
+          }
+        },
+        {
+          "url": "https://www.githubstatus.com/history.rss",
+          "status": 200,
+          "ok": true,
+          "ms": 109,
+          "contentType": "application/rss+xml; charset=utf-8",
+          "etag": true,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 25,
+          "undated": 0,
+          "feedTitle": "GitHub Status - Incident History",
+          "newest": "2026-11-26T00:43:01.000Z",
+          "oldest": "2026-11-04T17:01:11.000Z",
+          "linkHosts": {
+            "www.githubstatus.com": 25
+          }
+        }
+      ]
+    },
+    {
+      "id": "gcp-status",
+      "type": "postmortem",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://status.cloud.google.com/en/feed.atom",
+          "status": 200,
+          "ok": true,
+          "ms": 74,
+          "contentType": "application/atom+xml; charset=utf-8",
+          "etag": false,
+          "lastModified": true,
+          "parses": true,
+          "kind": "atom",
+          "items": 1,
+          "undated": 0,
+          "feedTitle": "Google Cloud Service Health Updates",
+          "newest": "2026-11-05T06:17:42.000Z",
+          "oldest": "2026-11-05T06:17:42.000Z",
+          "linkHosts": {
+            "status.cloud.google.com": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "msft-security-blog",
+      "type": "deepdive",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://www.microsoft.com/en-us/security/blog/feed/",
+          "status": 200,
+          "ok": true,
+          "ms": 55,
+          "contentType": "application/rss+xml; charset=UTF-8",
+          "etag": true,
+          "lastModified": true,
+          "parses": true,
+          "kind": "rss",
+          "items": 10,
+          "undated": 0,
+          "feedTitle": "Microsoft Security Blog",
+          "newest": "2026-11-25T18:09:06.000Z",
+          "oldest": "2026-11-11T16:55:00.000Z",
+          "linkHosts": {
+            "www.microsoft.com": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "dfir-report",
+      "type": "deepdive",
+      "discoveryPages": [
+        {
+          "url": "https://thedfirreport.com/",
+          "status": 200,
+          "found": [
+            {
+              "url": "https://thedfirreport.com/feed/",
+              "title": "The DFIR Report &raquo; Feed"
+            },
+            {
+              "url": "https://thedfirreport.com/feed/",
+              "title": "The DFIR Report RSS2 Feed"
+            }
+          ]
+        }
+      ],
+      "feeds": [
+        {
+          "url": "https://thedfirreport.com/feed/",
+          "status": 200,
+          "ok": true,
+          "ms": 28,
+          "contentType": "application/rss+xml; charset=UTF-8",
+          "etag": true,
+          "lastModified": true,
+          "parses": true,
+          "kind": "rss",
+          "items": 10,
+          "undated": 0,
+          "feedTitle": "The DFIR Report",
+          "newest": "2026-08-24T14:28:41.000Z",
+          "oldest": "2025-07-14T00:50:41.000Z",
+          "linkHosts": {
+            "thedfirreport.com": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "risky-biz-news",
+      "type": "deepdive",
+      "discoveryPages": [
+        {
+          "url": "https://news.risky.biz/",
+          "status": 200,
+          "found": [
+            {
+              "url": "https://news.risky.biz/rss/",
+              "title": "Risky.Biz"
+            }
+          ]
+        }
+      ],
+      "feeds": [
+        {
+          "url": "https://news.risky.biz/rss/",
+          "status": 200,
+          "ok": true,
+          "ms": 20,
+          "contentType": "application/rss+xml; charset=utf-8",
+          "etag": true,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 15,
+          "undated": 0,
+          "feedTitle": "Risky.Biz",
+          "newest": "2026-11-26T02:12:13.000Z",
+          "oldest": "2026-11-02T02:15:25.000Z",
+          "linkHosts": {
+            "news.risky.biz": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "huntress",
+      "type": "deepdive",
+      "discoveryPages": [
+        {
+          "url": "https://www.huntress.com/blog",
+          "status": 200,
+          "found": []
+        }
+      ],
+      "feeds": []
+    },
+    {
+      "id": "wiz-research",
+      "type": "deepdive",
+      "discoveryPages": [
+        {
+          "url": "https://www.wiz.io/blog",
+          "status": 200,
+          "found": []
+        }
+      ],
+      "feeds": [
+        {
+          "url": "https://www.wiz.io/feed/rss.xml",
+          "status": 200,
+          "ok": true,
+          "ms": 56,
+          "contentType": "application/xml; charset=utf-8",
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "rss",
+          "items": 733,
+          "undated": 0,
+          "feedTitle": "Wiz Blog | RSS feed",
+          "newest": "2026-11-26T02:26:16.000Z",
+          "oldest": "2020-12-09T22:11:04.000Z",
+          "linkHosts": {
+            "www.wiz.io": 733
+          }
+        }
+      ]
+    },
+    {
+      "id": "epss-api",
+      "type": "data",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://api.first.org/data/v1/epss?cve=CVE-2024-3400",
+          "status": 200,
+          "ok": true,
+          "ms": 18,
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "json",
+          "items": 0
+        }
+      ]
+    },
+    {
+      "id": "cvelist-raw",
+      "type": "data",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/3xxx/CVE-2024-3400.json",
+          "status": 200,
+          "ok": true,
+          "ms": 25,
+          "etag": true,
+          "lastModified": false,
+          "parses": true,
+          "kind": "json",
+          "items": 0
+        }
+      ]
+    },
+    {
+      "id": "nvd-api",
+      "type": "data",
+      "discoveryPages": [],
+      "feeds": [
+        {
+          "url": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2024-3400",
+          "status": 200,
+          "ok": true,
+          "ms": 157,
+          "etag": false,
+          "lastModified": false,
+          "parses": true,
+          "kind": "json",
+          "items": 1
+        }
+      ]
+    }
+  ]
+}
