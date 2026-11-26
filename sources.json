@@ -1,0 +1,33 @@
+{
+  "_comment": "Feeds CyberBrief reads. All were confirmed working from GitHub's servers by the feed check (feedcheck/). 'weight' (0-1) is how much a story from this source counts on its own; stories covered by several sources rank higher regardless.",
+  "sources": [
+    { "id": "cisa-advisories", "name": "CISA", "type": "official", "weight": 0.75, "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml" },
+    { "id": "cisa-kev", "name": "CISA KEV", "type": "official", "weight": 1.0, "kind": "kev", "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "fallbackUrl": "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json" },
+    { "id": "ncsc-uk", "name": "NCSC UK", "type": "official", "weight": 0.85, "url": "https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml" },
+    { "id": "acsc-alerts", "name": "ACSC", "type": "official", "weight": 0.85, "url": "https://www.cyber.gov.au/rss/alerts" },
+    { "id": "acsc-advisories", "name": "ACSC", "type": "official", "weight": 0.8, "url": "https://www.cyber.gov.au/rss/advisories" },
+    { "id": "csa-sg", "name": "CSA Singapore", "type": "official", "weight": 0.55, "url": "https://www.csa.gov.sg/alerts-and-advisories/rss.xml" },
+
+    { "id": "msft-ti", "name": "Microsoft Threat Intelligence", "type": "research", "weight": 0.85, "url": "https://www.microsoft.com/en-us/security/blog/topic/threat-intelligence/feed/" },
+    { "id": "google-ti", "name": "Google Threat Intelligence", "type": "research", "weight": 0.85, "url": "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v" },
+    { "id": "talos", "name": "Cisco Talos", "type": "research", "weight": 0.8, "url": "https://blog.talosintelligence.com/rss/" },
+    { "id": "unit42", "name": "Unit 42", "type": "research", "weight": 0.8, "url": "https://unit42.paloaltonetworks.com/feed/" },
+    { "id": "eset", "name": "ESET WeLiveSecurity", "type": "research", "weight": 0.75, "url": "https://www.welivesecurity.com/en/rss/feed/" },
+    { "id": "sentinellabs", "name": "SentinelLabs", "type": "research", "weight": 0.8, "url": "https://www.sentinelone.com/labs/feed/" },
+    { "id": "citizenlab", "name": "Citizen Lab", "type": "research", "weight": 0.8, "url": "https://citizenlab.ca/feed/" },
+    { "id": "sans-isc", "name": "SANS ISC", "type": "research", "weight": 0.7, "url": "https://isc.sans.edu/rssfeed_full.xml" },
+    { "id": "project-zero", "name": "Google Project Zero", "type": "research", "weight": 0.85, "url": "https://projectzero.google/feed.xml" },
+    { "id": "schneier", "name": "Schneier on Security", "type": "research", "weight": 0.65, "url": "https://www.schneier.com/feed/" },
+
+    { "id": "bleepingcomputer", "name": "BleepingComputer", "type": "news", "weight": 0.8, "url": "https://www.bleepingcomputer.com/feed/" },
+    { "id": "therecord", "name": "The Record", "type": "news", "weight": 0.8, "url": "https://therecord.media/feed/" },
+    { "id": "securityweek", "name": "SecurityWeek", "type": "news", "weight": 0.75, "url": "https://www.securityweek.com/feed/" },
+    { "id": "krebs", "name": "Krebs on Security", "type": "news", "weight": 0.8, "url": "https://krebsonsecurity.com/feed/" },
+    { "id": "ars-security", "name": "Ars Technica", "type": "news", "weight": 0.75, "url": "https://arstechnica.com/security/feed/" },
+    { "id": "cyberscoop", "name": "CyberScoop", "type": "news", "weight": 0.75, "url": "https://cyberscoop.com/feed/" },
+    { "id": "techcrunch-security", "name": "TechCrunch", "type": "news", "weight": 0.7, "url": "https://techcrunch.com/category/security/feed/" },
+    { "id": "darkreading", "name": "Dark Reading", "type": "news", "weight": 0.7, "url": "https://www.darkreading.com/rss.xml" },
+    { "id": "register-security", "name": "The Register", "type": "news", "weight": 0.7, "url": "https://www.theregister.com/security/headlines.atom" },
+    { "id": "wired-security", "name": "Wired", "type": "news", "weight": 0.7, "url": "https://www.wired.com/feed/category/security/latest/rss" }
+  ]
+}

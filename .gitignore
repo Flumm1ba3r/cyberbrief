@@ -1,6 +1,7 @@
 node_modules/
 dist/
 feedcheck-results/
+site/data/
 *.log
 .env
 .DS_Store
