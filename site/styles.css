@@ -507,3 +507,32 @@ dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .chips.wrap button[aria-pressed="true"] { border-color: var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); text-decoration: line-through; }
 #update-link { font-weight: 600; }
 .foot .bad { color: var(--danger); }
+
+/* Daily Brief tab */
+.tabs button { font-size: 0.86rem; padding: 7px 0; }
+.view-brief .filters { display: none; }
+.view-brief .tabs { margin-bottom: 10px; }
+.brief-head {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.brief-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -0.01em; }
+.brief-date { margin: 2px 0 10px; font-size: 0.82rem; color: var(--muted); }
+.brief-overview { margin: 0 0 12px; font-size: 1rem; }
+.brief-topics { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.brief-topics button {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.brief-topics .count { color: var(--muted); font-weight: 400; margin-left: 5px; }
+.brief-head small { font-size: 0.75rem; }
+.brief-topic { margin-top: 10px; scroll-margin-top: 140px; }
+.brief-topic h3 { margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.brief-topic p { margin: 2px 0 0; font-size: 0.9rem; color: var(--muted); }

@@ -359,8 +359,94 @@ function renderChips(base) {
   );
 }
 
+// --- Daily Brief tab ------------------------------------------------------------------
+
+function renderBrief() {
+  const d = state.data;
+  const daily = d?.daily;
+  if (!daily) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = d ? 'The first Daily Brief will appear after the next update.' : 'Loading…';
+    list.replaceChildren(p);
+    return;
+  }
+  const byId = new Map([...d.stories, ...state.saved].map((s) => [s.id, s]));
+  const topics = daily.topics
+    .map((t) => ({ ...t, stories: t.storyIds.map((id) => byId.get(id)).filter((s) => s && !isMuted(s)) }))
+    .filter((t) => t.stories.length);
+  const all = topics.flatMap((t) => t.stories);
+  const readCount = all.filter((s) => state.read.has(s.id)).length;
+
+  const head = document.createElement('section');
+  head.className = 'brief-head';
+  const h = document.createElement('h2');
+  h.textContent = 'Daily Brief';
+  const date = document.createElement('p');
+  date.className = 'brief-date';
+  date.textContent = `${new Date(`${daily.date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })} · ${all.length} stories${readCount ? ` · ${readCount} read` : ''}`;
+  const ov = document.createElement('p');
+  ov.className = 'brief-overview';
+  ov.textContent = daily.overview || `The ${all.length} most important stories of the last 24 hours, grouped by topic.`;
+  const nav = document.createElement('div');
+  nav.className = 'brief-topics';
+  topics.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = t.label;
+    const c = document.createElement('span');
+    c.className = 'count';
+    c.textContent = t.stories.length;
+    b.append(c);
+    b.addEventListener('click', () => document.getElementById(`topic-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    nav.append(b);
+  });
+  head.append(h, date, ov, nav);
+  if (daily.overview) {
+    const by = document.createElement('small');
+    by.className = 'muted';
+    by.textContent = `Written by Claude, ${new Date(daily.generatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}. Fixed until tomorrow’s brief.`;
+    head.append(by);
+  }
+
+  const nodes = [head];
+  topics.forEach((t, i) => {
+    const sec = document.createElement('section');
+    sec.className = 'brief-topic';
+    sec.id = `topic-${i}`;
+    const th = document.createElement('h3');
+    th.textContent = t.label;
+    sec.append(th);
+    if (t.summary) {
+      const ts = document.createElement('p');
+      ts.textContent = t.summary;
+      sec.append(ts);
+    }
+    nodes.push(sec, ...t.stories.map(card));
+  });
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'show-more';
+  more.textContent = 'That’s the brief. See everything in Top →';
+  more.addEventListener('click', () => switchView('top'));
+  nodes.push(more);
+  list.replaceChildren(...nodes);
+  updateBadge();
+}
+
+function switchView(view) {
+  state.view = view;
+  state.limit = PAGE;
+  state.category = 'All';
+  store.set('view', view);
+  render();
+  window.scrollTo({ top: 0 });
+}
+
 function render() {
   document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === state.view)));
+  document.body.classList.toggle('view-brief', state.view === 'brief');
+  if (state.view === 'brief') { renderBrief(); return; }
   const base = baseSet();
   renderChips(base);
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -555,16 +641,7 @@ setInterval(() => { if (state.data && !$('#updated').classList.contains('flash')
 
 // --- events -------------------------------------------------------------------------
 
-document.querySelectorAll('.tabs button').forEach((b) =>
-  b.addEventListener('click', () => {
-    state.view = b.dataset.view;
-    state.limit = PAGE;
-    state.category = 'All';
-    store.set('view', state.view);
-    render();
-    window.scrollTo({ top: 0 });
-  }),
-);
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
 
 let qTimer;
 $('#q').addEventListener('input', (e) => {
@@ -786,6 +863,14 @@ function renderStory(story) {
 }
 
 function route() {
+  // The morning notification links to #/brief: open the Brief tab, then drop the hash so Back behaves normally.
+  if (location.hash === '#/brief') {
+    history.replaceState(null, '', location.pathname + location.search);
+    detail.hidden = true;
+    document.body.classList.remove('detail-open');
+    switchView('brief');
+    return;
+  }
   const m = location.hash.match(/^#\/story\/(.+)$/);
   if (m) {
     renderStory(findStory(decodeURIComponent(m[1])));

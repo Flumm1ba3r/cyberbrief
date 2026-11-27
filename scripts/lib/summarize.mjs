@@ -205,6 +205,59 @@ export async function weeklyRecap(stories, log) {
   }
 }
 
+// --- daily brief ------------------------------------------------------------------------
+
+const DAILY_SCHEMA = {
+  type: 'object',
+  properties: {
+    overview: { type: 'string' },
+    topics: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string' },
+          summary: { type: 'string' },
+          story_ids: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['label', 'summary', 'story_ids'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['overview', 'topics'],
+  additionalProperties: false,
+};
+
+const DAILY_SYSTEM = `You write the morning Daily Brief of a cybersecurity news app, read by a security professional on their phone before work. ${UNTRUSTED}
+
+You get today's most important stories. Return:
+- overview: 2-3 plain sentences on what matters most today and what to act on first. Name specific vendors, products and threat actors. No greetings, no "Today's brief".
+- topics: group ALL the stories into 2-5 topics. Each topic has a short label (2-4 words, e.g. "Exploited edge devices", "Breaches", "Policy & arrests"), a one-sentence summary of what the stories in it have in common or why they matter, and story_ids in order of importance. Every story id appears in exactly one topic. Order topics by importance.
+
+Use only facts in the stories.`;
+
+/** Returns { overview, topics: [{ label, summary, storyIds }] } or null. */
+export async function dailyBrief(stories, log) {
+  const text = stories.map((s) => `id: ${s.id}\nheadline: ${s.title} (${s.category}, ${s.published.slice(0, 10)})\n  ${s.summary.slice(0, 400)}`).join('\n\n');
+  try {
+    const r = await ask(DAILY_SYSTEM, text, DAILY_SCHEMA);
+    const ids = new Set(stories.map((s) => s.id));
+    const used = new Set();
+    const topics = r.topics.map((t) => ({
+      label: t.label.trim(),
+      summary: t.summary.trim(),
+      storyIds: t.story_ids.filter((id) => ids.has(id) && !used.has(id) && used.add(id)),
+    })).filter((t) => t.storyIds.length);
+    const missing = stories.filter((s) => !used.has(s.id)).map((s) => s.id);
+    if (missing.length) topics.push({ label: 'Also notable', summary: '', storyIds: missing });
+    return { overview: r.overview.trim(), topics };
+  } catch (e) {
+    log(`  Claude daily brief: ${describeError(e)}`);
+    return null;
+  }
+}
+
 export const summarizerModel = MODEL;
 export const claudeUsage = usage;
 export const claudeStats = stats;

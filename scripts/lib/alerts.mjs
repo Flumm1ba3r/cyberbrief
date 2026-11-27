@@ -251,24 +251,37 @@ export function digestDue(cfg, at = new Date()) {
 }
 
 /** Once a day around the configured local time, send the top 5 stories. Returns the updated digest state. */
-export async function sendDigest({ stories, digestState, appUrl, log }) {
-  const topic = process.env.NTFY_TOPIC?.trim();
+/**
+ * The local date whose Daily Brief should be built now: when the digest is due (DIGEST set), else null.
+ * Also returns today's local date, used to label a brief built outside the schedule.
+ */
+export function dailySchedule(log) {
   const cfg = parseDigest(process.env.DIGEST);
-  if (!topic || !process.env.DIGEST) return digestState;
-  if (!cfg) { log(`  DIGEST setting not understood: use e.g. "08:00 Asia/Singapore"`); return digestState; }
-  let due;
-  try { due = digestDue(cfg); } catch { log(`  DIGEST time zone not recognised: ${cfg.tz}`); return digestState; }
-  if (!due || digestState?.date === due) return digestState;
-  const recent = stories.filter((s) => Date.now() - Date.parse(s.published) < 24 * 3600 * 1000);
-  const top = (recent.length >= 3 ? recent : stories).slice(0, 5);
-  if (!top.length) return digestState;
+  if (process.env.DIGEST && !cfg) log('  DIGEST setting not understood: use e.g. "08:00 Asia/Singapore"');
+  try {
+    const tz = cfg?.tz || 'UTC';
+    return { configured: !!cfg, due: cfg ? digestDue(cfg) : null, today: localParts(tz).date };
+  } catch {
+    log(`  DIGEST time zone not recognised: ${cfg.tz}`);
+    return { configured: false, due: null, today: new Date().toISOString().slice(0, 10) };
+  }
+}
+
+/** Once a day around the configured local time, announce the Daily Brief. Returns the updated digest state. */
+export async function sendDigest({ daily, due, digestState, appUrl, log }) {
+  const topic = process.env.NTFY_TOPIC?.trim();
+  if (!topic || !due || !daily || daily.date !== due || digestState?.date === due) return digestState;
+  const day = new Date(`${due}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const topics = daily.topics.map((t) => `• ${t.label} (${t.storyIds.length})`).join('\n');
+  const intro = daily.overview || `${daily.storyIds.length} top stories from the last 24 hours.`;
   try {
     await send(topic, {
-      title: 'Your daily CyberBrief: top 5',
-      message: top.map((s, i) => `${i + 1}. ${s.title}`).join('\n').slice(0, 1000),
+      title: `Your Daily Brief · ${day}`,
+      message: `${intro}\n\n${topics}`.slice(0, 1000),
       priority: 3,
       tags: ['newspaper'],
-      ...(appUrl ? { click: appUrl } : {}),
+      // Opens the app on the Brief tab.
+      ...(appUrl ? { click: `${appUrl}#/brief` } : {}),
     }, log);
     return { date: due };
   } catch (e) {

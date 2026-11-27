@@ -10,7 +10,7 @@ import {
   isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive,
 } from './lib/rank.mjs';
 import { enrichCves } from './lib/cve.mjs';
-import { alertReason, sendAlerts, watchTerms, checkHealth, sendDigest } from './lib/alerts.mjs';
+import { alertReason, sendAlerts, watchTerms, checkHealth, sendDigest, dailySchedule } from './lib/alerts.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const OUT_DIR = new URL('site/data/', ROOT);
@@ -419,6 +419,39 @@ if (claude && weekTop.length >= 3 && (!recap || ageOf(recap.generatedAt) > RECAP
 }
 if (!claude) recap = null;
 
+// The Daily Brief: the day's top stories grouped by topic, built once a day when the digest is due
+// (or once per day when no DIGEST is set) and then kept fixed until the next one.
+const DAILY_SIZE = 8;
+const schedule = dailySchedule(log);
+let daily = state.daily || null;
+const dailyGone = daily && !daily.storyIds.some((id) => final.some((f) => f.id === id));
+const needDaily = !daily || dailyGone ||
+  (schedule.due ? !(daily.scheduled && daily.date === schedule.due) : !schedule.configured && daily.date !== schedule.today);
+if (needDaily) {
+  const within = (h) => shown.filter((s) => ageOf(s.published) <= h * HOUR && final.some((f) => f.id === s.id));
+  let pool = within(24);
+  if (pool.length < 5) pool = within(48);
+  const picks = pool.sort((a, b) => weekScore(b) - weekScore(a)).slice(0, DAILY_SIZE);
+  if (picks.length) {
+    log(`Building Daily Brief (${picks.length} stories)…`);
+    let brief = claude ? await claude.dailyBrief(picks, log) : null;
+    if (!brief) {
+      // Without Claude: one topic per category, in order of each category's most important story.
+      const byCat = new Map();
+      for (const st of picks) { if (!byCat.has(st.category)) byCat.set(st.category, []); byCat.get(st.category).push(st.id); }
+      brief = { overview: null, topics: [...byCat].map(([label, storyIds]) => ({ label, summary: '', storyIds })) };
+    }
+    daily = {
+      date: schedule.due || schedule.today,
+      scheduled: !!schedule.due,
+      generatedAt: nowIso,
+      overview: brief.overview,
+      topics: brief.topics,
+      storyIds: brief.topics.flatMap((t) => t.storyIds),
+    };
+  }
+}
+
 // --- 8. push alerts (optional) ---------------------------------------------------------
 
 const alerted = state.alerted || {}; // story id -> when it alerted
@@ -440,7 +473,7 @@ for (const [id, at] of Object.entries(alerted)) if (ageOf(at) > ARCHIVE_DAYS * D
 // Health: alert when sources keep failing or Claude stops working; the app shows it too.
 const healthState = state.health || {};
 const health = await checkHealth({ health: healthState, status, claudeStats: claude?.claudeStats, appUrl: process.env.APP_URL, log });
-const digestState = await sendDigest({ stories: final, digestState: state.digest, appUrl: process.env.APP_URL, log });
+const digestState = await sendDigest({ daily, due: schedule.due, digestState: state.digest, appUrl: process.env.APP_URL, log });
 
 if (claude) {
   const u = claude.claudeUsage;
@@ -454,6 +487,7 @@ const briefing = {
   updateEveryHours: 1, // keep in step with the cron schedule in .github/workflows/briefing.yml
   repo: process.env.GITHUB_REPOSITORY || null,
   sources: status.sort((a, b) => a.id.localeCompare(b.id)),
+  daily,
   week: { storyIds: weekTop.map((s) => s.id), recap: recap?.text || null, recapAt: recap?.generatedAt || null },
   health,
   stories: final,
@@ -464,7 +498,7 @@ for (const k of Object.keys(pairCache)) {
   const [a, b] = k.split('|');
   if (!archive[a] || !archive[b]) delete pairCache[k];
 }
-const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState, health: healthState, digest: digestState };
+const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState, health: healthState, digest: digestState, daily };
 
 await mkdir(OUT_DIR, { recursive: true });
 await writeFile(new URL('briefing.json', OUT_DIR), JSON.stringify(briefing));
