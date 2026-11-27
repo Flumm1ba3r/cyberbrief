@@ -106,7 +106,7 @@ function markRead(id) {
   if (state.read.has(id)) return;
   state.read.add(id);
   store.set('read', [...state.read].slice(-1500));
-  document.querySelectorAll(`.card[data-id="${CSS.escape(id)}"]`).forEach((el) => el.classList.add('read'));
+  document.querySelectorAll(`.card[data-id="${CSS.escape(id)}"]`).forEach((el) => el.classList.add('is-read'));
 }
 
 function toggleSave(story, btn) {
@@ -160,7 +160,7 @@ function cveLink(c, info) {
 function card(story) {
   const el = tpl.content.firstElementChild.cloneNode(true);
   el.dataset.id = story.id;
-  if (state.read.has(story.id)) el.classList.add('read');
+  if (state.read.has(story.id)) el.classList.add('is-read');
 
   const cat = el.querySelector('.cat');
   cat.textContent = SHORT[story.category] || story.category;

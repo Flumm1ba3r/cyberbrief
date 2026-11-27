@@ -255,7 +255,7 @@ main { padding-top: 12px; padding-bottom: 24px; display: grid; gap: 12px; }
 .new { background: var(--new); color: var(--surface); }
 
 .title { margin: 6px 0 6px; font-size: 1.08rem; line-height: 1.32; letter-spacing: -0.005em; overflow-wrap: anywhere; }
-.card.read .title { color: var(--muted); font-weight: 600; }
+.card.is-read .title { color: var(--muted); font-weight: 600; }
 
 .summary { margin: 0 0 8px; font-size: 0.95rem; overflow-wrap: anywhere; }
 .why { margin: 0 0 8px; font-size: 0.9rem; color: var(--muted); }
