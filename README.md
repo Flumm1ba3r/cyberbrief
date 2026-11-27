@@ -23,6 +23,14 @@ The build runs in GitHub Actions (`.github/workflows/briefing.yml`): `scripts/bu
 3. **Run it**: Actions → Briefing → Run workflow. After that it runs every hour.
 4. **Open it** at `https://<your-username>.github.io/cyberbrief/`. On iPhone, tap Share → Add to Home Screen; on Android, use the browser menu → Install app.
 
+### Reliable hourly updates
+
+GitHub's own schedule is best effort and can skip runs for hours, so an external timer starts the update instead (the GitHub schedule stays as a backup):
+
+1. Create a fine-grained token at https://github.com/settings/personal-access-tokens/new with access to only this repository and the permission **Actions: Read and write**.
+2. At https://cron-job.org create a job that runs every hour at minute 47 and sends `POST https://api.github.com/repos/<owner>/cyberbrief/actions/workflows/briefing.yml/dispatches` with the body `{"ref":"main"}` and the headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`. A test run should return 204.
+3. Renew the token before it expires; if updates stop, the app shows a warning once the briefing is over 3 hours old.
+
 ### Push alerts (optional)
 
 CyberBrief can send critical stories to your phone with the free [ntfy](https://ntfy.sh) app (developer: Philipp Heckel).
