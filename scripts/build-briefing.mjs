@@ -466,14 +466,14 @@ if (process.env.NTFY_TOPIC) {
     const reason = out && alertReason(st, out, ctx);
     if (reason) candidates.push({ out, reason });
   }
-  alertState = await sendAlerts({ candidates, alerted, alertState, appUrl: process.env.APP_URL, log });
+  alertState = await sendAlerts({ candidates, alerted, alertState, appUrl: process.env.APP_URL, builtAt: nowIso, log });
 }
 for (const [id, at] of Object.entries(alerted)) if (ageOf(at) > ARCHIVE_DAYS * DAY) delete alerted[id];
 
 // Health: alert when sources keep failing or Claude stops working; the app shows it too.
 const healthState = state.health || {};
 const health = await checkHealth({ health: healthState, status, claudeStats: claude?.claudeStats, appUrl: process.env.APP_URL, log });
-const digestState = await sendDigest({ daily, due: schedule.due, digestState: state.digest, appUrl: process.env.APP_URL, log });
+const digestState = await sendDigest({ daily, due: schedule.due, digestState: state.digest, appUrl: process.env.APP_URL, builtAt: nowIso, log });
 
 if (claude) {
   const u = claude.claudeUsage;

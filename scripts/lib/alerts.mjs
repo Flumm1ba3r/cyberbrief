@@ -12,8 +12,12 @@ const SERVER = process.env.NTFY_SERVER || 'https://ntfy.sh';
 const MAX_PER_RUN = 4;
 const FRESH_HOURS = 12; // only alert stories CyberBrief first saw recently, never a backlog
 
-/** Link that opens a story inside the app (see the #/story/ route in site/app.js). */
-export const storyLink = (appUrl, id) => (appUrl ? `${appUrl}#/story/${encodeURIComponent(id)}` : null);
+/**
+ * Link that opens a story inside the app (see the #/story/ route in site/app.js). Alerts go out about a minute before
+ * the new briefing is published, so the link carries the build time (?b=) and the app waits for that build.
+ */
+export const storyLink = (appUrl, id, builtAt) =>
+  (appUrl ? `${appUrl}#/story/${encodeURIComponent(id)}${builtAt ? `?b=${encodeURIComponent(builtAt)}` : ''}` : null);
 
 const topicHash = (t) => createHash('sha256').update(t).digest('hex').slice(0, 16);
 
@@ -83,7 +87,7 @@ function quietNow(log) {
  * Send alerts for the given candidates and record them in `alerted` (story id -> ISO time).
  * Never throws: alerts must not break the briefing.
  */
-export async function sendAlerts({ candidates, alerted, alertState, appUrl, log }) {
+export async function sendAlerts({ candidates, alerted, alertState, appUrl, builtAt, log }) {
   const topic = process.env.NTFY_TOPIC?.trim();
   if (!topic) return alertState;
   // During quiet hours nothing is sent or marked as sent: the first run afterwards picks up what is still fresh.
@@ -119,7 +123,7 @@ export async function sendAlerts({ candidates, alerted, alertState, appUrl, log 
         priority: reason.priority,
         tags: [reason.priority === 5 ? 'rotating_light' : 'warning'],
         // Tapping opens the story in CyberBrief (summary, all sources, timeline); a button goes straight to the article.
-        click: storyLink(appUrl, out.id) || lead.url,
+        click: storyLink(appUrl, out.id, builtAt) || lead.url,
         actions: [
           { action: 'view', label: `Read on ${lead.name}`.slice(0, 40), url: lead.url },
         ],
@@ -268,7 +272,7 @@ export function dailySchedule(log) {
 }
 
 /** Once a day around the configured local time, announce the Daily Brief. Returns the updated digest state. */
-export async function sendDigest({ daily, due, digestState, appUrl, log }) {
+export async function sendDigest({ daily, due, digestState, appUrl, builtAt, log }) {
   const topic = process.env.NTFY_TOPIC?.trim();
   if (!topic || !due || !daily || daily.date !== due || digestState?.date === due) return digestState;
   const day = new Date(`${due}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -281,7 +285,7 @@ export async function sendDigest({ daily, due, digestState, appUrl, log }) {
       priority: 3,
       tags: ['newspaper'],
       // Opens the app on the Brief tab.
-      ...(appUrl ? { click: `${appUrl}#/brief` } : {}),
+      ...(appUrl ? { click: `${appUrl}#/brief${builtAt ? `?b=${encodeURIComponent(builtAt)}` : ''}` } : {}),
     }, log);
     return { date: due };
   } catch (e) {

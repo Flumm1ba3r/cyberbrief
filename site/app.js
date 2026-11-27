@@ -736,13 +736,22 @@ function section(title, ...children) {
   return sec;
 }
 
-function renderStory(story) {
+function renderStory(story, waitingText) {
   const body = detail.querySelector('.detail-body');
   if (!story) {
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = state.data ? 'This story is no longer in the briefing.' : 'Loading…';
-    body.replaceChildren(p);
+    p.textContent = waitingText || (state.data ? 'This story isn’t in the briefing anymore.' : 'Loading…');
+    const nodes = [p];
+    if (!waitingText && state.data) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'show-more';
+      b.textContent = 'Back to the stories';
+      b.addEventListener('click', closeStory);
+      nodes.push(b);
+    }
+    body.replaceChildren(...nodes);
     return;
   }
   const nodes = [];
@@ -862,20 +871,65 @@ function renderStory(story) {
   share.onclick = () => navigator.share({ title: story.title, url: leadUrl }).catch(() => {});
 }
 
-function route() {
+// Notification links carry the time of the build that sent them (?b=…). That build is published about a minute
+// after the notification, so wait for it, fetching past every cache, for up to ~2.5 minutes.
+async function fetchLatest() {
+  try {
+    const res = await fetch(`${DATA_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+    if (!state.data || d.generatedAt >= state.data.generatedAt) {
+      state.data = d;
+      state.fetchedAt = Date.now();
+      renderStatus();
+      render();
+    }
+  } catch { /* offline: keep what we have */ }
+}
+
+async function waitForBuild(builtAt) {
+  const deadline = Date.now() + 150000;
+  while (!(state.data && state.data.generatedAt >= builtAt) && Date.now() < deadline) {
+    await fetchLatest();
+    if (state.data && state.data.generatedAt >= builtAt) break;
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+}
+
+let routing = 0;
+async function route() {
+  const turn = ++routing;
+  const [path, query = ''] = location.hash.slice(1).split('?');
+  const builtAt = new URLSearchParams(query).get('b');
+  const stale = builtAt && !(state.data && state.data.generatedAt >= builtAt);
+
   // The morning notification links to #/brief: open the Brief tab, then drop the hash so Back behaves normally.
-  if (location.hash === '#/brief') {
+  if (path === '/brief') {
     history.replaceState(null, '', location.pathname + location.search);
     detail.hidden = true;
     document.body.classList.remove('detail-open');
     switchView('brief');
+    if (stale) {
+      setStatus('Loading today’s brief…', true);
+      await waitForBuild(builtAt);
+      if (turn === routing && state.view === 'brief') { render(); setStatus(statusText(state.data), false); }
+    }
     return;
   }
-  const m = location.hash.match(/^#\/story\/(.+)$/);
+  const m = path.match(/^\/story\/(.+)$/);
   if (m) {
-    renderStory(findStory(decodeURIComponent(m[1])));
+    const id = decodeURIComponent(m[1]);
     detail.hidden = false;
     document.body.classList.add('detail-open');
+    let story = findStory(id);
+    if (!story && state.data) {
+      renderStory(null, 'Loading the latest briefing…');
+      if (stale) await waitForBuild(builtAt);
+      else await fetchLatest(); // an older link: check once for a newer briefing before giving up
+      if (turn !== routing) return;
+      story = findStory(id);
+    }
+    renderStory(story);
   } else {
     detail.hidden = true;
     document.body.classList.remove('detail-open');
