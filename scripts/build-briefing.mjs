@@ -7,7 +7,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { loadSource, truncate } from './lib/feeds.mjs';
 import {
-  isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive,
+  isNoise, cvesIn, cluster, baseScore, finalScore, guessCategory, storyId, contentKey, tokens, jaccard, looksLikeDeepDive, properNames,
 } from './lib/rank.mjs';
 import { enrichCves } from './lib/cve.mjs';
 import { alertReason, sendAlerts, watchTerms, checkHealth, sendDigest, dailySchedule } from './lib/alerts.mjs';
@@ -223,9 +223,70 @@ for (const st of live) {
   if (!st.deepDive && ageOf(st.published) > WINDOW_DAYS * DAY) st.dropped = true; // only kept for being a possible deep dive
 }
 
+// --- 4b. same event under different headlines --------------------------------------
+// Grouping by headline misses coverage worded very differently ("SAP confirms cyber incident amid reports of source
+// code breach" vs "SAP confirms security incident after suspicious GitHub activity"), and Claude only compares
+// stories summarized in the same run. So stories within 36 hours that share a name and some wording are checked
+// once by Claude; confirmed pairs are merged into one story, and the merge is remembered for later runs.
+const DUP_HOURS = 36;
+const DUP_CHECKS_MAX = 30;
+if (claude) {
+  const pool = live.filter((s) => !s.dropped && !s.kev && ageOf(s.published) < 72 * HOUR);
+  const meta = new Map(pool.map((s) => [s, { names: properNames(s.title), toks: tokens(s.title) }]));
+  const confirmed = [];
+  const askDup = [];
+  for (let i = 0; i < pool.length; i++) {
+    for (let k = i + 1; k < pool.length; k++) {
+      const a = pool[i], b = pool[k];
+      if (Math.abs(Date.parse(a.published) - Date.parse(b.published)) > DUP_HOURS * HOUR) continue;
+      const key = `dup|${[a.id, b.id].sort().join('|')}`;
+      if (key in pairCache) { if (pairCache[key].f) confirmed.push([a, b]); continue; }
+      const ma = meta.get(a), mb = meta.get(b);
+      if (![...ma.names].some((n) => mb.names.has(n))) continue;
+      const { inter, j } = jaccard(ma.toks, mb.toks);
+      if (inter >= 2 && j >= 0.15 && askDup.length < DUP_CHECKS_MAX) askDup.push({ key, a, b });
+    }
+  }
+  if (askDup.length) {
+    log(`Checking ${askDup.length} possible duplicates…`);
+    const brief = (st) => ({ title: st.title, summary: st.summary || '', date: st.published.slice(0, 10), source: st.items[0].sourceName });
+    const res = await claude.sameEvent(askDup.map((p) => ({ pair: p.key, a: brief(p.a), b: brief(p.b) })), log);
+    for (const p of askDup) {
+      if (!res.has(p.key)) continue; // not answered: ask again next run
+      pairCache[p.key] = { f: res.get(p.key) };
+      if (res.get(p.key)) confirmed.push([p.a, p.b]);
+    }
+  }
+  // Merge confirmed pairs (and chains of them) into the earliest story of each group.
+  const parent = new Map();
+  const find = (x) => { while (parent.get(x) !== x) x = parent.get(x); return x; };
+  for (const [a, b] of confirmed) {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    parent.set(find(a), find(b));
+  }
+  const groups = new Map();
+  for (const st of parent.keys()) { const r = find(st); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(st); }
+  let merges = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    group.sort((x, y) => Date.parse(x.published) - Date.parse(y.published));
+    const [target, ...rest] = group;
+    for (const st of rest) {
+      target.items.push(...st.items);
+      st.merged = true;
+      delete archive[st.id];
+      merges++;
+    }
+    finish(target);
+    mergedUrls.push(target.items.map((i) => i.url));
+  }
+  if (merges) log(`Merged ${merges} duplicate ${merges === 1 ? 'story' : 'stories'}`);
+}
+
 // --- 5. follow-ups: link new stories to earlier ones about the same incident --------
 
-const current = live.filter((s) => !s.dropped).sort((a, b) => Date.parse(a.published) - Date.parse(b.published));
+const current = live.filter((s) => !s.dropped && !s.merged).sort((a, b) => Date.parse(a.published) - Date.parse(b.published));
 const recordOf = (st) => ({
   id: st.id,
   threadId: st.threadId,
@@ -495,7 +556,7 @@ const briefing = {
 
 // Keep only cached follow-up decisions that still involve archived stories.
 for (const k of Object.keys(pairCache)) {
-  const [a, b] = k.split('|');
+  const [a, b] = k.startsWith('dup|') ? k.slice(4).split('|') : k.split('|');
   if (!archive[a] || !archive[b]) delete pairCache[k];
 }
 const newState = { version: 1, savedAt: nowIso, archive, cves: cveCache, pairs: pairCache, mergedUrls: mergedUrls.slice(-300), recap, alerted, alertState, health: healthState, digest: digestState, daily };

@@ -29,6 +29,15 @@ export function tokens(title) {
   );
 }
 
+/** Names in a headline (words with a capital letter after the first word, or all-caps), lower-cased: "SAP", "GitHub". */
+export function properNames(title) {
+  const words = title.replace(/[’']s\b/g, '').split(/[^A-Za-z0-9.-]+/).filter(Boolean);
+  return new Set(words
+    .filter((w, i) => w.length >= 3 && (/^[A-Z0-9]{2,}$/.test(w) || (i > 0 && /[A-Z]/.test(w)) || /[a-z][A-Z]/.test(w)))
+    .map((w) => w.toLowerCase())
+    .filter((w) => !STOP.has(w)));
+}
+
 export function jaccard(a, b) {
   let inter = 0;
   for (const t of a) if (b.has(t)) inter++;

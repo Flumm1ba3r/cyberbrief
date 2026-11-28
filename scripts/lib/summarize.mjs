@@ -181,6 +181,48 @@ export async function confirmFollowUps(pairs, log) {
   return out;
 }
 
+// --- same event, different headlines -----------------------------------------------------
+
+const SAME_SYSTEM = `You remove duplicate stories from a cybersecurity news feed. For each pair you get two stories, A and B, from different outlets, published within a day or so of each other. ${UNTRUSTED}
+
+same_event is true when both report the same specific incident, vulnerability, campaign or announcement, even if the headlines differ or one has more details (for example two outlets reporting "SAP confirms security incident"). It is false when they are different events that merely share a vendor, product, threat actor or topic, and false when B reports a distinct new development of A (a patch, an arrest, a final report): those are tracked separately.`;
+
+const SAME_SCHEMA = {
+  type: 'object',
+  properties: {
+    pairs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { pair: { type: 'string' }, same_event: { type: 'boolean' } },
+        required: ['pair', 'same_event'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['pairs'],
+  additionalProperties: false,
+};
+
+/** pairs: [{ pair, a: {title, summary, date, source}, b: {…} }]. Returns Map pair -> boolean. */
+export async function sameEvent(pairs, log) {
+  const out = new Map();
+  for (let i = 0; i < pairs.length; i += 20) {
+    const chunk = pairs.slice(i, i + 20);
+    const text = chunk.map((p) =>
+      `pair: ${p.pair}\nA (${p.a.source}, ${p.a.date}): ${p.a.title}\n  ${p.a.summary.slice(0, 350)}\nB (${p.b.source}, ${p.b.date}): ${p.b.title}\n  ${p.b.summary.slice(0, 350)}`).join('\n\n');
+    try {
+      const { pairs: results } = await ask(SAME_SYSTEM, text, SAME_SCHEMA);
+      for (const r of results) out.set(r.pair, r.same_event);
+    } catch (e) {
+      log(`  Claude duplicate check: ${describeError(e)}`);
+      if (isFatal(e)) break;
+    }
+  }
+  log(`  Claude checked ${out.size}/${pairs.length} possible duplicates, ${[...out.values()].filter(Boolean).length} confirmed`);
+  return out;
+}
+
 // --- weekly recap ---------------------------------------------------------------------
 
 const RECAP_SCHEMA = {
